@@ -3,6 +3,32 @@ const EXAMPLE_PROMPTS = [
   'draw a house and a tree',
   'draw a star inside a circle'
 ];
+
+const HARDCODED_PROGRAMS = {
+  'draw a star inside a circle': `penup()
+penup()
+home()
+pendown()
+# Draw the outer circle in blue
+color("blue")
+pensize(3)
+penup()
+goto(0, -0)
+setheading(0)
+pendown()
+circle(200)
+# Draw a centered five-point star in orange inside the circle
+color("orange")
+pensize(4)
+penup()
+goto(-50, 150)
+setheading(306)
+pendown()
+repeat(5) {
+  forward(320)
+  right(144)
+}`
+};
 const MIN_SPEED = 1;
 const MAX_SPEED = 10;
 const DEFAULT_SPEED = 4;
@@ -50,7 +76,7 @@ function syncHighlight() {
   const lines = codeEditor.value.split('\n');
   const html = lines.map((line) => {
     if (/^\s*#/.test(line)) {
-      return `<br /><span class="code-comment">${escapeHtml(line)}</span>`;
+      return `<span class="code-comment">${escapeHtml(line)}</span>`;
     }
     return escapeHtml(line);
   }).join('\n');
@@ -328,6 +354,19 @@ async function generateFromPrompt(event) {
   event.preventDefault();
 
   codeError.textContent = '';
+
+  const hardcodedCode = HARDCODED_PROGRAMS[promptInput.value.trim().toLowerCase()];
+  if (hardcodedCode) {
+    state.aiCode = hardcodedCode;
+    codeEditor.value = hardcodedCode;
+    syncHighlight();
+    transparencyNote.textContent = '';
+    setWarnings([]);
+    setSuggestions([]);
+    await runEditedCode();
+    return;
+  }
+
   loadingText.textContent = 'AI is writing turtle code...';
 
   try {
