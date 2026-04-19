@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TurtleLab — AI Turtle Playground</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel" aria-labelledby="prompt-title">
+        <h2 id="prompt-title">Prompt</h2>
+        <p class="panel-subtitle">Tell the AI what to draw.</p>
+        <form id="prompt-form" class="prompt-form">
+          <label for="prompt-input" class="sr-only">Prompt</label>
+          <textarea
+            id="prompt-input"
+            rows="3"
+            maxlength="240"
+            placeholder="Draw a square house with a red roof and a sun"
+          ></textarea>
+          <div class="button-row">
+            <button id="generate-button" type="submit">Generate</button>
+            <span id="loading-text" class="loading" aria-live="polite"></span>
+          </div>
+        </form>
+        <div class="chip-list" id="chip-list"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="canvas-title">
+        <h2 id="canvas-title">Canvas</h2>
+        <p class="panel-subtitle">Watch the turtle drawing happen.</p>
+        <canvas id="turtle-canvas" width="800" height="600"></canvas>
+        <div class="button-row">
+          <button id="replay-button" type="button">Replay</button>
+          <button id="clear-button" type="button">Reset Canvas</button>
+          <label class="toggle">
+            <input id="animate-toggle" type="checkbox" checked />
+            Animate
+          </label>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="code-title">
+        <h2 id="code-title">Code</h2>
+        <p class="panel-subtitle">Edit and run safe turtle code.</p>
+        <div class="code-editor-wrapper">
+          <pre id="code-highlight" aria-hidden="true"></pre>
+          <textarea id="code-editor" rows="18" spellcheck="false"></textarea>
+        </div>
+        <div class="button-row">
+          <button id="run-button" type="button">Run</button>
+          <button id="restore-button" type="button">Restore AI Version</button>
+          <button id="copy-button" type="button">Copy Code</button>
+        </div>
+        <p id="code-error" class="error" aria-live="polite"></p>
+      </section>
+
+      <section class="panel" aria-labelledby="explain-title">
+        <h2 id="explain-title">Explain</h2>
+        <p id="transparency-note" class="transparency"></p>
+        <p id="explanation-text">Ask the AI to start drawing, and your explanation will appear here.</p>
+        <ul id="warnings-list" class="warnings"></ul>
+        <div>
+          <h3>Try this next:</h3>
+          <ul id="suggestions-list"></ul>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
