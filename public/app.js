@@ -516,7 +516,7 @@ function showSplashThenPrompt() {
   }
 
   clearSplashTimer();
-  state.splashTimer = setTimeout(finishSplash, DEFAULT_SPLASH_DISPLAY_DURATION_MS);
+  //state.splashTimer = setTimeout(finishSplash, DEFAULT_SPLASH_DISPLAY_DURATION_MS);
 }
 
 function clearCanvas() {
