@@ -169,10 +169,10 @@ const PROVIDER_BASE_URLS = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
   custom: ''
 };
-const PROVIDER_MODELS = {
-  openai: 'gpt-4o-mini',
-  anthropic: 'claude-3-5-sonnet-latest',
-  gemini: 'gemini-2.0-flash',
+const PROVIDER_TOKEN_URLS = {
+  openai: 'https://platform.openai.com/settings/organization/api-keys',
+  anthropic: 'https://console.anthropic.com/settings/keys',
+  gemini: 'https://aistudio.google.com/app/apikey',
   custom: ''
 };
 
@@ -181,12 +181,12 @@ const splashModal = document.querySelector('#splash-modal');
 const tokenForm = document.querySelector('#token-form');
 const tokenProvider = document.querySelector('#token-provider');
 const tokenInput = document.querySelector('#token-input');
-const tokenModel = document.querySelector('#token-model');
 const tokenBaseUrl = document.querySelector('#token-base-url');
+const getTokenLink = document.querySelector('#get-token-link');
 const tokenStatus = document.querySelector('#token-status');
-const removeTokenButton = document.querySelector('#remove-token-button');
 const skipSplashButton = document.querySelector('#skip-splash-button');
 const aiConnectionBadge = document.querySelector('#ai-connection-badge');
+const logoutButton = document.querySelector('#logout-button');
 const openPromptButton = document.querySelector('#open-prompt-button');
 const closePromptButton = document.querySelector('#close-prompt-button');
 const promptForm = document.querySelector('#prompt-form');
@@ -209,6 +209,7 @@ const saveProjectButton = document.querySelector('#save-project-button');
 const codeError = document.querySelector('#code-error');
 
 const transparencyNote = document.querySelector('#transparency-note');
+const sessionNotice = document.querySelector('#session-notice');
 const aiOverview = document.querySelector('#ai-overview');
 const reviewHint = document.querySelector('#review-hint');
 const warningsList = document.querySelector('#warnings-list');
@@ -427,12 +428,46 @@ function setAiConnectionBadge(status) {
   aiConnectionBadge.textContent = status.serverFallbackAvailable ? 'AI: Server key' : 'AI: Optional';
 }
 
+function selectedProviderTokenUrl(provider) {
+  return PROVIDER_TOKEN_URLS[provider] || '';
+}
+
+function setProviderHelpLink(provider) {
+  const tokenUrl = selectedProviderTokenUrl(provider);
+  if (tokenUrl) {
+    getTokenLink.href = tokenUrl;
+    getTokenLink.hidden = false;
+  } else {
+    getTokenLink.hidden = true;
+  }
+}
+
+function setSessionNotice(message = '', link = '') {
+  sessionNotice.innerHTML = '';
+  if (!message) {
+    return;
+  }
+
+  sessionNotice.append(document.createTextNode(message));
+  if (link) {
+    sessionNotice.append(document.createTextNode(' '));
+    const anchor = document.createElement('a');
+    anchor.href = link;
+    anchor.target = '_blank';
+    anchor.rel = 'noreferrer';
+    anchor.textContent = 'Manage provider keys';
+    sessionNotice.append(anchor);
+  }
+}
+
 function setTokenStatusUi(status) {
-  removeTokenButton.disabled = !Boolean(status.hasToken);
+  logoutButton.hidden = !Boolean(status.hasToken);
+  logoutButton.disabled = !Boolean(status.hasToken);
   setAiConnectionBadge(status);
+  setProviderHelpLink(status.provider || tokenProvider.value || 'openai');
 
   if (status.hasToken) {
-    tokenStatus.textContent = `Using ${status.provider} token in this session.`;
+    tokenStatus.textContent = `Using ${status.provider} token in this session with the app default model.`;
   } else if (status.serverFallbackAvailable) {
     tokenStatus.textContent = 'No personal token set. The app can still use a server default key.';
   } else {
@@ -442,12 +477,10 @@ function setTokenStatusUi(status) {
 
 function syncProviderDefaults() {
   const provider = tokenProvider.value || 'openai';
-  if (!tokenModel.value) {
-    tokenModel.value = PROVIDER_MODELS[provider] || '';
-  }
   if (!tokenBaseUrl.value) {
     tokenBaseUrl.value = PROVIDER_BASE_URLS[provider] || '';
   }
+  setProviderHelpLink(provider);
 }
 
 async function readJsonSafe(response) {
@@ -477,7 +510,6 @@ async function saveSessionToken(event) {
     body: JSON.stringify({
       provider: tokenProvider.value,
       token: tokenInput.value,
-      model: tokenModel.value,
       baseUrl: tokenBaseUrl.value
     })
   });
@@ -488,6 +520,7 @@ async function saveSessionToken(event) {
   }
 
   tokenInput.value = '';
+  setSessionNotice('');
   await refreshTokenStatus();
   closeSplashModal();
   openPromptModal();
@@ -495,11 +528,19 @@ async function saveSessionToken(event) {
 
 async function removeSessionToken() {
   clearSplashTimer();
+  const statusResponse = await fetch('/api/session/token-status');
+  const statusPayload = await readJsonSafe(statusResponse);
+  const provider = statusPayload.provider || tokenProvider.value || 'openai';
   const response = await fetch('/api/session/token/logout', { method: 'POST' });
   const payload = await readJsonSafe(response);
   if (!response.ok) {
     throw new Error(payload.error || 'Could not remove token.');
   }
+  const tokenUrl = selectedProviderTokenUrl(provider);
+  setSessionNotice(
+    'Logged out. Your session token was removed from the server. For safety, also remove/revoke this key at your provider.',
+    tokenUrl
+  );
   await refreshTokenStatus();
 }
 
@@ -865,7 +906,6 @@ function setupPromptChips() {
 }
 
 tokenProvider.addEventListener('change', () => {
-  tokenModel.value = '';
   tokenBaseUrl.value = '';
   syncProviderDefaults();
 });
@@ -877,11 +917,11 @@ tokenForm.addEventListener('submit', async (event) => {
     tokenStatus.textContent = error.message;
   }
 });
-removeTokenButton.addEventListener('click', async () => {
+logoutButton.addEventListener('click', async () => {
   try {
     await removeSessionToken();
   } catch (error) {
-    tokenStatus.textContent = error.message;
+    setSessionNotice(error.message);
   }
 });
 skipSplashButton.addEventListener('click', () => {

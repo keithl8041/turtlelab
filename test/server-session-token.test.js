@@ -42,8 +42,7 @@ test('session token API stores token in memory and never returns token value', a
     },
     body: JSON.stringify({
       provider: 'openai',
-      token: 'sk-example-token',
-      model: 'gpt-4o-mini'
+      token: 'sk-example-token'
     })
   });
   assert.equal(setTokenResponse.status, 200);
