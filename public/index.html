@@ -8,7 +8,7 @@
   </head>
   <body>
     <header class="topbar">
-      <h1>TurtleLab</h1>
+      <h1>Turtle Flow AI</h1>
       <button id="open-prompt-button" type="button">Draw Something Else</button>
     </header>
 
@@ -81,6 +81,13 @@
         </div>
         <div class="chip-list" id="chip-list"></div>
       </form>
+    </dialog>
+
+    <dialog id="splash-modal" class="splash-modal" aria-labelledby="splash-title">
+      <div class="splash-content">
+        <img src="/logo.png" alt="Turtle Flow AI logo" class="splash-logo" />
+        <h2 id="splash-title">Welcome to Turtle Flow AI</h2>
+      </div>
     </dialog>
 
     <script type="module" src="/app.js"></script>

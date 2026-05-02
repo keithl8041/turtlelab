@@ -162,8 +162,10 @@ const DEFAULT_SPEED = 4;
 const PROJECT_DRAFT_KEY = 'turtlelab.project';
 const PROJECT_HISTORY_KEY = 'turtlelab.projects';
 const MAX_SAVED_PROJECTS = 20;
+const SPLASH_DURATION_MS = 2600;
 
 const promptModal = document.querySelector('#prompt-modal');
+const splashModal = document.querySelector('#splash-modal');
 const openPromptButton = document.querySelector('#open-prompt-button');
 const closePromptButton = document.querySelector('#close-prompt-button');
 const promptForm = document.querySelector('#prompt-form');
@@ -376,6 +378,27 @@ function closePromptModal() {
   } else {
     promptModal.removeAttribute('open');
   }
+}
+
+function showSplashThenPrompt() {
+  const finishSplash = () => {
+    if (typeof splashModal.close === 'function') {
+      if (splashModal.open) {
+        splashModal.close();
+      }
+    } else {
+      splashModal.removeAttribute('open');
+    }
+    openPromptModal();
+  };
+
+  if (typeof splashModal.showModal === 'function') {
+    splashModal.showModal();
+  } else {
+    splashModal.setAttribute('open', 'open');
+  }
+
+  setTimeout(finishSplash, SPLASH_DURATION_MS);
 }
 
 function clearCanvas() {
@@ -745,4 +768,4 @@ loadDraftProject();
 renderSavedProjects();
 syncHighlight();
 clearCanvas();
-openPromptModal();
+showSplashThenPrompt();

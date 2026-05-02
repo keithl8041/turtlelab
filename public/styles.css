@@ -2,7 +2,7 @@
   font-family: "Inter", "Segoe UI", sans-serif;
   color-scheme: light;
   color: #1f2937;
-  background: #f3f4f6;
+  background: #eef2ff;
 }
 
 * {
@@ -11,19 +11,24 @@
 
 body {
   margin: 0;
-  background: #f3f4f6;
+  background: radial-gradient(circle at 20% 20%, #fff7ed 0%, #eef2ff 45%, #e0f2fe 100%);
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1rem 0;
+  padding: 0.75rem 1rem 0.25rem;
+  background: linear-gradient(90deg, #f97316, #ec4899, #6366f1);
+  color: #ffffff;
+  border-bottom: 3px solid rgba(255, 255, 255, 0.35);
 }
 
 .topbar h1 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.5rem;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
 }
 
 .layout {
@@ -49,10 +54,10 @@ body {
 }
 
 .panel {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.9);
   border-radius: 0.75rem;
   padding: 1rem;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.14);
 }
 
 h2 {
@@ -130,16 +135,17 @@ textarea {
 button {
   border: none;
   border-radius: 999px;
-  background: #2563eb;
+  background: linear-gradient(135deg, #f97316, #ec4899 55%, #6366f1);
   color: white;
   font-weight: 600;
   padding: 0.5rem 1rem;
   cursor: pointer;
   min-height: 40px;
+  box-shadow: 0 6px 12px rgba(236, 72, 153, 0.24);
 }
 
 button:hover {
-  background: #1d4ed8;
+  filter: brightness(1.08);
 }
 
 button:disabled {
@@ -149,12 +155,13 @@ button:disabled {
 }
 
 .secondary-button {
-  background: #e5e7eb;
-  color: #111827;
+  background: #fff1f2;
+  color: #be123c;
+  box-shadow: none;
 }
 
 .secondary-button:hover {
-  background: #d1d5db;
+  background: #ffe4e6;
 }
 
 .button-row {
@@ -232,15 +239,16 @@ button:disabled {
 }
 
 .chip {
-  border: 1px solid #93c5fd;
-  background: #dbeafe;
-  color: #1e3a8a;
+  border: 1px solid #f9a8d4;
+  background: #fdf2f8;
+  color: #be185d;
+  box-shadow: none;
 }
 
 #turtle-canvas {
   width: 100%;
   height: auto;
-  border: 2px solid #dbeafe;
+  border: 2px solid #c4b5fd;
   border-radius: 0.5rem;
   background: #ffffff;
 }
@@ -281,9 +289,41 @@ button:disabled {
 }
 
 .saved-project-button {
-  background: #eef2ff;
-  color: #1e3a8a;
-  border: 1px solid #c7d2fe;
+  background: #ede9fe;
+  color: #5b21b6;
+  border: 1px solid #c4b5fd;
+}
+
+.splash-modal {
+  border: none;
+  border-radius: 1rem;
+  padding: 0;
+  overflow: hidden;
+  width: min(560px, calc(100vw - 2rem));
+}
+
+.splash-modal::backdrop {
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.splash-content {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: center;
+  text-align: center;
+  padding: 1rem 1rem 1.25rem;
+  background: linear-gradient(160deg, #ffedd5, #fce7f3 55%, #e0e7ff);
+}
+
+.splash-logo {
+  width: min(320px, 100%);
+  max-height: 230px;
+  object-fit: contain;
+}
+
+.splash-content h2 {
+  margin: 0;
+  color: #7c2d12;
 }
 
 .prompt-modal {
