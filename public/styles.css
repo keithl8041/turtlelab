@@ -298,6 +298,16 @@ button:disabled {
   padding: 0.5rem;
 }
 
+.session-notice {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  color: #155e75;
+  background: #ecfeff;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  min-height: 0;
+}
+
 .saved-projects {
   display: flex;
   flex-wrap: wrap;
@@ -360,6 +370,17 @@ button:disabled {
   text-align: left;
 }
 
+.token-link {
+  justify-self: start;
+  color: #1d4ed8;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.token-link:hover {
+  text-decoration: underline;
+}
+
 .token-form input,
 .token-form select {
   width: 100%;
@@ -375,6 +396,10 @@ button:disabled {
   min-height: 1.1rem;
   color: #6b21a8;
   text-align: left;
+}
+
+.token-status a {
+  color: inherit;
 }
 
 .prompt-modal {

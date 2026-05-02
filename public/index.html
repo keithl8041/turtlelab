@@ -11,6 +11,7 @@
       <h1>Turtle Flow AI</h1>
       <div class="topbar-actions">
         <span id="ai-connection-badge" class="ai-connection-badge">AI: Optional</span>
+        <button id="logout-button" type="button" class="secondary-button" hidden>Log out</button>
         <button id="open-prompt-button" type="button">Draw Something Else</button>
       </div>
     </header>
@@ -49,6 +50,7 @@
       <section class="panel explain-panel" aria-labelledby="explain-title">
         <h2 id="explain-title">Explain</h2>
         <p id="transparency-note" class="transparency"></p>
+        <p id="session-notice" class="session-notice" aria-live="polite"></p>
         <p id="ai-overview" class="ai-overview"></p>
         <p id="review-hint" class="review-hint">Suggest → Review → Edit: let the AI guess, then fix the code.</p>
         <ul id="warnings-list" class="warnings"></ul>
@@ -99,15 +101,13 @@
             <option value="gemini">Gemini (compatible endpoint)</option>
             <option value="custom">Custom compatible API</option>
           </select>
+          <a id="get-token-link" class="token-link" href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Get a token</a>
           <label for="token-input">API token</label>
           <input id="token-input" type="password" autocomplete="off" placeholder="Paste token (optional)" />
-          <label for="token-model">Model (optional)</label>
-          <input id="token-model" type="text" autocomplete="off" placeholder="gpt-4o-mini" />
           <label for="token-base-url">Base URL (optional)</label>
           <input id="token-base-url" type="url" autocomplete="off" placeholder="https://api.openai.com/v1" />
           <div class="button-row">
             <button id="save-token-button" type="submit">Use My Token</button>
-            <button id="remove-token-button" type="button" class="secondary-button">Log out & Remove Token</button>
             <button id="skip-splash-button" type="button" class="secondary-button">Continue Without Token</button>
           </div>
           <p id="token-status" class="token-status" aria-live="polite"></p>

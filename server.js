@@ -23,7 +23,7 @@ const MAX_PROMPT_LENGTH_FOR_SIMPLIFICATION = 90;
 
 const AI_BASE_URL = process.env.AI_BASE_URL || 'https://api.openai.com/v1';
 const AI_API_KEY = process.env.AI_API_KEY || '';
-const AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini';
+const AI_MODEL = process.env.AI_MODEL || 'gpt-4.1-mini';
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 15_000);
 const SESSION_COOKIE_NAME = 'turtlelab.sid';
 const DEFAULT_SESSION_TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
@@ -34,7 +34,7 @@ const SESSION_ID_PATTERN = new RegExp(`^[a-zA-Z0-9-]{${MIN_SESSION_ID_LENGTH},${
 const PROVIDER_DEFAULTS = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini'
+    model: 'gpt-4.1-mini'
   },
   anthropic: {
     baseUrl: 'https://api.anthropic.com/v1',
@@ -515,7 +515,6 @@ function handleTokenStatus(res, sessionContext) {
   jsonResponse(res, 200, {
     hasToken: Boolean(tokenEntry),
     provider: tokenEntry?.provider || null,
-    model: tokenEntry?.model || null,
     baseUrl: tokenEntry?.baseUrl || null,
     serverFallbackAvailable: Boolean(AI_API_KEY)
   }, sessionContext.responseHeaders);
@@ -539,7 +538,7 @@ function handleSetToken(req, res, sessionContext) {
         provider,
         token,
         baseUrl: normalizeBaseUrl(body.baseUrl, defaults.baseUrl),
-        model: trimTo(body.model || defaults.model, 120) || defaults.model,
+        model: defaults.model,
         updatedAt: Date.now()
       });
 
