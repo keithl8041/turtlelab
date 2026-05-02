@@ -4,35 +4,16 @@ const EXAMPLE_PROMPTS = [
   'draw a star inside a circle'
 ];
 
-const HARDCODED_PROGRAMS = {
-  'draw a star inside a circle': `penup()
-penup()
-home()
-pendown()
-# Draw the outer circle in blue
-color("blue")
-pensize(3)
-penup()
-goto(0, -0)
-setheading(0)
-pendown()
-circle(200)
-# Draw a centered five-point star in orange inside the circle
-color("orange")
-pensize(4)
-penup()
-goto(-50, 150)
-setheading(306)
-pendown()
-repeat(5) {
-  forward(320)
-  right(144)
-}`
-};
 const MIN_SPEED = 1;
 const MAX_SPEED = 10;
 const DEFAULT_SPEED = 4;
+const PROJECT_DRAFT_KEY = 'turtlelab.project';
+const PROJECT_HISTORY_KEY = 'turtlelab.projects';
+const MAX_SAVED_PROJECTS = 20;
 
+const promptModal = document.querySelector('#prompt-modal');
+const openPromptButton = document.querySelector('#open-prompt-button');
+const closePromptButton = document.querySelector('#close-prompt-button');
 const promptForm = document.querySelector('#prompt-form');
 const promptInput = document.querySelector('#prompt-input');
 const loadingText = document.querySelector('#loading-text');
@@ -48,12 +29,15 @@ const codeHighlight = document.querySelector('#code-highlight');
 const runButton = document.querySelector('#run-button');
 const restoreButton = document.querySelector('#restore-button');
 const copyButton = document.querySelector('#copy-button');
+const saveProjectButton = document.querySelector('#save-project-button');
 const codeError = document.querySelector('#code-error');
 
-const explanationText = document.querySelector('#explanation-text');
 const transparencyNote = document.querySelector('#transparency-note');
+const aiOverview = document.querySelector('#ai-overview');
+const reviewHint = document.querySelector('#review-hint');
 const warningsList = document.querySelector('#warnings-list');
 const suggestionsList = document.querySelector('#suggestions-list');
+const savedProjects = document.querySelector('#saved-projects');
 
 const ctx = canvas.getContext('2d');
 
@@ -88,49 +72,141 @@ codeEditor.addEventListener('scroll', () => {
   codeHighlight.scrollTop = codeEditor.scrollTop;
 });
 
-function saveProject() {
+function getSavedHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PROJECT_HISTORY_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function setSavedHistory(projects) {
+  localStorage.setItem(PROJECT_HISTORY_KEY, JSON.stringify(projects.slice(0, MAX_SAVED_PROJECTS)));
+}
+
+function saveDraftProject() {
   const project = {
     prompt: promptInput.value,
     code: codeEditor.value,
-    explanation: explanationText.textContent,
+    aiCode: state.aiCode,
+    aiOverview: aiOverview.textContent,
     transparencyNote: transparencyNote.textContent,
+    reviewHint: reviewHint.textContent,
     warnings: Array.from(warningsList.children).map((item) => item.textContent),
     suggestions: Array.from(suggestionsList.children).map((item) => item.textContent)
   };
 
-  localStorage.setItem('turtlelab.project', JSON.stringify(project));
+  localStorage.setItem(PROJECT_DRAFT_KEY, JSON.stringify(project));
 }
 
-function loadProject() {
-  const raw = localStorage.getItem('turtlelab.project');
+function setWarnings(warnings) {
+  warningsList.innerHTML = '';
+  for (const warning of warnings || []) {
+    const item = document.createElement('li');
+    item.textContent = warning;
+    warningsList.append(item);
+  }
+}
+
+function setSuggestions(suggestions) {
+  suggestionsList.innerHTML = '';
+  for (const suggestion of suggestions || []) {
+    const item = document.createElement('li');
+    item.textContent = suggestion;
+    suggestionsList.append(item);
+  }
+}
+
+function applySavedProject(project) {
+  promptInput.value = project.prompt || '';
+  codeEditor.value = project.code || '';
+  state.aiCode = project.aiCode || project.code || '';
+  aiOverview.textContent = project.aiOverview || '';
+  transparencyNote.textContent = project.transparencyNote || '';
+  reviewHint.textContent = project.reviewHint || 'Suggest → Review → Edit: let the AI guess, then fix the code.';
+  setWarnings(project.warnings || []);
+  setSuggestions(project.suggestions || []);
+  syncHighlight();
+}
+
+function loadDraftProject() {
+  const raw = localStorage.getItem(PROJECT_DRAFT_KEY);
   if (!raw) {
     return;
   }
 
   try {
-    const project = JSON.parse(raw);
-    promptInput.value = project.prompt || '';
-    codeEditor.value = project.code || '';
-    state.aiCode = project.code || '';
-    syncHighlight();
-    explanationText.textContent = project.explanation || explanationText.textContent;
-    transparencyNote.textContent = project.transparencyNote || '';
-
-    warningsList.innerHTML = '';
-    for (const warning of project.warnings || []) {
-      const item = document.createElement('li');
-      item.textContent = warning;
-      warningsList.append(item);
-    }
-
-    suggestionsList.innerHTML = '';
-    for (const suggestion of project.suggestions || []) {
-      const item = document.createElement('li');
-      item.textContent = suggestion;
-      suggestionsList.append(item);
-    }
+    applySavedProject(JSON.parse(raw));
   } catch {
-    localStorage.removeItem('turtlelab.project');
+    localStorage.removeItem(PROJECT_DRAFT_KEY);
+  }
+}
+
+function renderSavedProjects() {
+  savedProjects.innerHTML = '';
+  const projects = getSavedHistory();
+
+  if (projects.length === 0) {
+    const empty = document.createElement('span');
+    empty.className = 'panel-subtitle';
+    empty.textContent = 'No saved drawings yet.';
+    savedProjects.append(empty);
+    return;
+  }
+
+  for (const project of projects) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'saved-project-button';
+    const title = project.name || project.prompt || 'Saved drawing';
+    button.textContent = title.slice(0, 40);
+    button.addEventListener('click', async () => {
+      applySavedProject(project);
+      await runEditedCode();
+    });
+    savedProjects.append(button);
+  }
+}
+
+function saveToHistory() {
+  const name = promptInput.value.trim() || `Drawing ${new Date().toLocaleString()}`;
+  const entry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name,
+    prompt: promptInput.value,
+    code: codeEditor.value,
+    aiCode: state.aiCode,
+    aiOverview: aiOverview.textContent,
+    transparencyNote: transparencyNote.textContent,
+    reviewHint: reviewHint.textContent,
+    warnings: Array.from(warningsList.children).map((item) => item.textContent),
+    suggestions: Array.from(suggestionsList.children).map((item) => item.textContent)
+  };
+
+  const current = getSavedHistory().filter((project) => project.code !== entry.code || project.prompt !== entry.prompt);
+  setSavedHistory([entry, ...current]);
+  renderSavedProjects();
+}
+
+function openPromptModal() {
+  if (typeof promptModal.showModal === 'function') {
+    if (!promptModal.open) {
+      promptModal.showModal();
+    }
+  } else {
+    promptModal.setAttribute('open', 'open');
+  }
+  promptInput.focus();
+}
+
+function closePromptModal() {
+  if (typeof promptModal.close === 'function') {
+    if (promptModal.open) {
+      promptModal.close();
+    }
+  } else {
+    promptModal.removeAttribute('open');
   }
 }
 
@@ -322,7 +398,7 @@ function flattenCommands(commands) {
         for (let i = 0; i < item.count; i += 1) {
           walk(item.body || []);
         }
-      } else {
+      } else if (item.cmd !== 'comment') {
         result.push(item);
       }
     }
@@ -332,41 +408,9 @@ function flattenCommands(commands) {
   return result;
 }
 
-function setWarnings(warnings) {
-  warningsList.innerHTML = '';
-  for (const warning of warnings || []) {
-    const item = document.createElement('li');
-    item.textContent = warning;
-    warningsList.append(item);
-  }
-}
-
-function setSuggestions(suggestions) {
-  suggestionsList.innerHTML = '';
-  for (const suggestion of suggestions || []) {
-    const item = document.createElement('li');
-    item.textContent = suggestion;
-    suggestionsList.append(item);
-  }
-}
-
 async function generateFromPrompt(event) {
   event.preventDefault();
-
   codeError.textContent = '';
-
-  const hardcodedCode = HARDCODED_PROGRAMS[promptInput.value.trim().toLowerCase()];
-  if (hardcodedCode) {
-    state.aiCode = hardcodedCode;
-    codeEditor.value = hardcodedCode;
-    syncHighlight();
-    transparencyNote.textContent = '';
-    setWarnings([]);
-    setSuggestions([]);
-    await runEditedCode();
-    return;
-  }
-
   loadingText.textContent = 'AI is writing turtle code...';
 
   try {
@@ -392,13 +436,15 @@ async function generateFromPrompt(event) {
     codeEditor.value = payload.displayCode;
     syncHighlight();
 
-    explanationText.textContent = payload.program.explanation;
+    aiOverview.textContent = payload.aiOverview || payload.program.explanation || '';
     transparencyNote.textContent = payload.transparencyNote || '';
+    reviewHint.textContent = payload.workflowHint || 'Suggest → Review → Edit: let the AI guess, then fix the code.';
     setWarnings(payload.warnings || []);
     setSuggestions(payload.suggestions || []);
 
     renderProgram(payload.program, state.currentPlan, animateToggle.checked);
-    saveProject();
+    saveDraftProject();
+    closePromptModal();
   } catch (error) {
     codeError.textContent = error.message;
   } finally {
@@ -427,10 +473,10 @@ async function runEditedCode() {
     state.currentProgram = payload.program;
     state.currentPlan = payload.executionPlan || flattenCommands(payload.program.commands);
     state.currentCode = codeEditor.value;
-    explanationText.textContent = payload.program.explanation;
+    aiOverview.textContent = payload.program.explanation;
 
     renderProgram(payload.program, state.currentPlan, animateToggle.checked);
-    saveProject();
+    saveDraftProject();
   } catch (error) {
     codeError.textContent = error.message;
   }
@@ -464,10 +510,16 @@ function setupPromptChips() {
   }
 }
 
+openPromptButton.addEventListener('click', openPromptModal);
+closePromptButton.addEventListener('click', closePromptModal);
 promptForm.addEventListener('submit', generateFromPrompt);
 runButton.addEventListener('click', runEditedCode);
 restoreButton.addEventListener('click', restoreAiCode);
 copyButton.addEventListener('click', copyCode);
+saveProjectButton.addEventListener('click', () => {
+  saveToHistory();
+  saveDraftProject();
+});
 replayButton.addEventListener('click', () => {
   if (state.currentProgram) {
     renderProgram(state.currentProgram, state.currentPlan, animateToggle.checked);
@@ -476,5 +528,8 @@ replayButton.addEventListener('click', () => {
 clearButton.addEventListener('click', clearCanvas);
 
 setupPromptChips();
-loadProject();
+loadDraftProject();
+renderSavedProjects();
+syncHighlight();
 clearCanvas();
+openPromptModal();

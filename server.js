@@ -1,4 +1,8 @@
-require('dotenv').config();
+try {
+  require('dotenv').config();
+} catch {
+  // dotenv is optional in environments where dependencies are not installed
+}
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -21,7 +25,15 @@ const AI_API_KEY = process.env.AI_API_KEY || '';
 const AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini';
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 15_000);
 
-const TURTLE_DSL_SYSTEM_PROMPT = `You are a Logo turtle graphics code generator. Return a JSON array of turtle commands that draws a coherent, well-composed picture matching the user's prompt.
+const TURTLE_DSL_SYSTEM_PROMPT = `You are a Logo turtle graphics code generator for children. Return only valid JSON.
+
+Output format:
+{
+  "title": "Short drawing title",
+  "description": "One short sentence describing the drawing",
+  "explanation": "A kid-friendly explanation (max 60 words) of what the turtle drew",
+  "commands": [ ...turtle commands... ]
+}
 
 ## State tracking (critical)
 Before you write a single command, sketch the full drawing in your head:
@@ -60,7 +72,7 @@ Before you write a single command, sketch the full drawing in your head:
 - **Keep it together.** Position shapes so they form one coherent scene — a house has walls, a roof above them, windows inside the walls. Use goto to reach deliberate start points; use setheading to set a consistent facing direction when starting a new part.
 - Keep total expanded command count under 500. Nest repeat at most 6 levels deep.
 - Add a comment before each distinct part of the drawing.
-- Return ONLY a raw JSON array — no markdown, no explanation, no code fences.
+- Return ONLY raw JSON. No markdown. No code fences. No extra text.
 `;
 
 const rateLimitStore = new Map();
@@ -160,7 +172,7 @@ async function commandsForPrompt(prompt) {
       },
       body: JSON.stringify({
         model: AI_MODEL,
-        temperature: 0.7,
+        temperature: 1.2,
         messages: [
           { role: 'system', content: TURTLE_DSL_SYSTEM_PROMPT },
           { role: 'user', content: `Draw: ${prompt}` }
@@ -177,16 +189,14 @@ async function commandsForPrompt(prompt) {
 
     const json = await response.json();
     const raw = json?.choices?.[0]?.message?.content || '';
-
-    // Strip optional markdown code fences the model may include despite instructions
-    const cleaned = raw.replace(/^```[\w]*\n?/m, '').replace(/```$/m, '').trim();
-    const commands = JSON.parse(cleaned);
-
-    if (!Array.isArray(commands)) {
-      throw new Error('AI did not return a JSON array.');
-    }
-
-    return { commands, aiUsed: true };
+    const aiPayload = parseAiTurtleResponse(raw);
+    return {
+      commands: aiPayload.commands,
+      aiTitle: aiPayload.title,
+      aiDescription: aiPayload.description,
+      aiExplanation: aiPayload.explanation,
+      aiUsed: true
+    };
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('[AI] commandsForPrompt failed:', error.message);
@@ -194,6 +204,26 @@ async function commandsForPrompt(prompt) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function parseAiTurtleResponse(rawMessage) {
+  const cleaned = String(rawMessage || '').replace(/^```[\w]*\n?/m, '').replace(/```$/m, '').trim();
+  const parsed = JSON.parse(cleaned);
+
+  if (Array.isArray(parsed)) {
+    return { commands: parsed };
+  }
+
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.commands)) {
+    throw new Error('AI did not return a valid turtle JSON object.');
+  }
+
+  return {
+    commands: parsed.commands,
+    title: typeof parsed.title === 'string' ? parsed.title : undefined,
+    description: typeof parsed.description === 'string' ? parsed.description : undefined,
+    explanation: typeof parsed.explanation === 'string' ? parsed.explanation : undefined
+  };
 }
 
 function shouldSimplify(prompt) {
@@ -222,14 +252,20 @@ function getSuggestions(program) {
 
 async function buildProgramFromPrompt(prompt, ageMode = 'kids') {
   const simplified = shouldSimplify(prompt);
-  const { commands, aiUsed } = await commandsForPrompt(prompt);
+  const {
+    commands,
+    aiUsed,
+    aiTitle,
+    aiDescription,
+    aiExplanation
+  } = await commandsForPrompt(prompt);
 
   const program = {
-    title: 'AI Turtle Drawing',
-    description: simplified ? 'A simpler version of your idea for easy turtle drawing.' : 'A turtle drawing from your prompt.',
-    explanation: simplified
+    title: aiTitle || 'AI Turtle Drawing',
+    description: aiDescription || (simplified ? 'A simpler version of your idea for easy turtle drawing.' : 'A turtle drawing from your prompt.'),
+    explanation: aiExplanation || (simplified
       ? 'I made a simpler version so the turtle could draw it clearly. The turtle follows each command to build the picture.'
-      : 'The turtle follows each command in order to draw your picture step by step.',
+      : 'The turtle follows each command in order to draw your picture step by step.'),
     settings: {
       ...defaultSettings,
       speed: ageMode === 'kids' ? 4 : 8
@@ -346,6 +382,8 @@ function handleGenerate(req, res) {
         suggestions: getSuggestions(program),
         executionPlan,
         aiUsed,
+        aiOverview: program.explanation,
+        workflowHint: 'Suggest → Review → Edit: the AI guessed first, now try fixing the code to improve the drawing.',
         transparencyNote: aiUsed
           ? 'The AI turned your words into turtle code. You can check and change its code below.'
           : 'This is a sample drawing. Set AI_API_KEY to enable AI-generated drawings.'
@@ -482,5 +520,6 @@ if (require.main === module) {
 
 module.exports = {
   buildProgramFromPrompt,
+  parseAiTurtleResponse,
   server
 };
