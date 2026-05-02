@@ -7,67 +7,115 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <h1>Turtle Flow AI</h1>
-      <div class="topbar-actions">
-        <span id="ai-connection-badge" class="ai-connection-badge">AI: Optional</span>
-        <button id="logout-button" type="button" class="secondary-button" hidden>Log out</button>
-        <button id="open-prompt-button" type="button">Draw Something Else</button>
+    <section id="intro-page" class="intro-page" aria-labelledby="intro-title">
+      <div class="intro-grid">
+        <div class="intro-copy">
+          <p class="intro-eyebrow">AI turtle playground</p>
+          <img src="/logo.png" alt="Turtle Flow AI logo" class="intro-logo" />
+          <h1 id="intro-title">Turtle Flow AI</h1>
+          <p class="intro-lead">
+            Turtle Flow AI turns plain-English drawing ideas into safe turtle code, animates the result on the canvas,
+            and explains what the program is doing so you can inspect it, learn from it, and improve it.
+          </p>
+          <p class="intro-body">
+            Start with a prompt, let the app suggest a drawing program, then review the generated code, edit it by hand,
+            replay the turtle path, and save versions you want to keep. If you want live AI generation through your own
+            provider account, you can add a session-only API token here before entering the studio.
+          </p>
+          <div class="button-row intro-actions">
+            <button id="intro-start-button" type="button">Start Drawing</button>
+          </div>
+        </div>
+
+        <section class="panel intro-setup" aria-labelledby="setup-title">
+          <h2 id="setup-title">Optional AI setup</h2>
+          <p class="panel-subtitle">Bring your own API token if you want the app to use your provider account. Tokens stay only in server memory for this session.</p>
+          <form id="token-form" class="token-form">
+            <label for="token-provider">Provider</label>
+            <select id="token-provider">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic (compatible endpoint)</option>
+              <option value="gemini">Gemini (compatible endpoint)</option>
+              <option value="custom">Custom compatible API</option>
+            </select>
+            <a id="get-token-link" class="token-link" href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Get a token</a>
+            <label for="token-input">API token</label>
+            <input id="token-input" type="password" autocomplete="off" placeholder="Paste token (optional)" />
+            <label for="token-base-url">Base URL (optional)</label>
+            <input id="token-base-url" type="url" autocomplete="off" placeholder="https://api.openai.com/v1" />
+            <div class="button-row">
+              <button id="save-token-button" type="submit">Use My Token</button>
+              <button id="skip-splash-button" type="button" class="secondary-button">Continue Without Token</button>
+            </div>
+            <p id="token-status" class="token-status" aria-live="polite"></p>
+          </form>
+        </section>
       </div>
-    </header>
+    </section>
 
-    <main class="layout">
-      <section class="panel canvas-panel" aria-labelledby="canvas-title">
-        <h2 id="canvas-title">Canvas</h2>
-        <p class="panel-subtitle">Watch the turtle drawing happen.</p>
-        <div class="canvas-wrapper">
-          <canvas id="turtle-canvas" width="800" height="600"></canvas>
-          <canvas id="turtle-sprite-canvas" width="800" height="600" aria-hidden="true"></canvas>
+    <div id="studio" hidden>
+      <header class="topbar">
+        <h1>Turtle Flow AI</h1>
+        <div class="topbar-actions">
+          <span id="ai-connection-badge" class="ai-connection-badge">AI: Optional</span>
+          <button id="logout-button" type="button" class="secondary-button" hidden>Log out</button>
+          <button id="open-prompt-button" type="button">Draw Something Else</button>
         </div>
-        <div class="button-row">
-          <button id="replay-button" type="button">Replay</button>
-          <button id="clear-button" type="button">Reset Canvas</button>
-          <label class="toggle">
-            <input id="animate-toggle" type="checkbox" checked />
-            Animate
-          </label>
-        </div>
-      </section>
+      </header>
 
-      <section class="panel code-panel" aria-labelledby="code-title">
-        <h2 id="code-title">Code</h2>
-        <p class="panel-subtitle">Review the AI code, then edit it to make it better.</p>
-        <div class="code-editor-wrapper">
-          <pre id="code-highlight" aria-hidden="true"></pre>
-          <textarea id="code-editor" rows="18" spellcheck="false"></textarea>
-        </div>
-        <div class="button-row">
-          <button id="run-button" type="button">Run</button>
-          <button id="restore-button" type="button">Restore AI Version</button>
-          <button id="copy-button" type="button">Copy Code</button>
-          <button id="save-project-button" type="button">Save Drawing</button>
-        </div>
-        <p id="code-error" class="error" aria-live="polite"></p>
-      </section>
+      <main class="layout">
+        <section class="panel canvas-panel" aria-labelledby="canvas-title">
+          <h2 id="canvas-title">Canvas</h2>
+          <p class="panel-subtitle">Watch the turtle drawing happen.</p>
+          <div class="canvas-wrapper">
+            <canvas id="turtle-canvas" width="800" height="600"></canvas>
+            <canvas id="turtle-sprite-canvas" width="800" height="600" aria-hidden="true"></canvas>
+          </div>
+          <div class="button-row">
+            <button id="replay-button" type="button">Replay</button>
+            <button id="clear-button" type="button">Reset Canvas</button>
+            <label class="toggle">
+              <input id="animate-toggle" type="checkbox" checked />
+              Animate
+            </label>
+          </div>
+        </section>
 
-      <section class="panel explain-panel" aria-labelledby="explain-title">
-        <h2 id="explain-title">Explain</h2>
-        <p id="transparency-note" class="transparency"></p>
-        <p id="session-notice" class="session-notice" aria-live="polite"></p>
-        <p id="ai-overview" class="ai-overview"></p>
-        <p id="review-hint" class="review-hint">Suggest → Review → Edit: let the AI guess, then fix the code.</p>
-        <ul id="warnings-list" class="warnings"></ul>
-        <div>
-          <h3>Try this next:</h3>
-          <ul id="suggestions-list"></ul>
-        </div>
-        <div>
-          <h3>Saved drawings</h3>
-          <p class="panel-subtitle">Load any previous drawing from this browser.</p>
-          <div id="saved-projects" class="saved-projects"></div>
-        </div>
-      </section>
-    </main>
+        <section class="panel code-panel" aria-labelledby="code-title">
+          <h2 id="code-title">Code</h2>
+          <p class="panel-subtitle">Review the AI code, then edit it to make it better.</p>
+          <div class="code-editor-wrapper">
+            <pre id="code-highlight" aria-hidden="true"></pre>
+            <textarea id="code-editor" rows="18" spellcheck="false"></textarea>
+          </div>
+          <div class="button-row">
+            <button id="run-button" type="button">Run</button>
+            <button id="restore-button" type="button">Restore AI Version</button>
+            <button id="copy-button" type="button">Copy Code</button>
+            <button id="save-project-button" type="button">Save Drawing</button>
+          </div>
+          <p id="code-error" class="error" aria-live="polite"></p>
+        </section>
+
+        <section class="panel explain-panel" aria-labelledby="explain-title">
+          <h2 id="explain-title">Explain</h2>
+          <p id="transparency-note" class="transparency"></p>
+          <p id="session-notice" class="session-notice" aria-live="polite"></p>
+          <p id="ai-overview" class="ai-overview"></p>
+          <p id="review-hint" class="review-hint">Suggest → Review → Edit: let the AI guess, then fix the code.</p>
+          <ul id="warnings-list" class="warnings"></ul>
+          <div>
+            <h3>Try this next:</h3>
+            <ul id="suggestions-list"></ul>
+          </div>
+          <div>
+            <h3>Saved drawings</h3>
+            <p class="panel-subtitle">Load any previous drawing from this browser.</p>
+            <div id="saved-projects" class="saved-projects"></div>
+          </div>
+        </section>
+      </main>
+    </div>
 
     <dialog id="prompt-modal" class="prompt-modal" aria-labelledby="prompt-title">
       <form id="prompt-form" class="prompt-form" method="dialog">
@@ -89,32 +137,6 @@
         </div>
         <div class="chip-list" id="chip-list"></div>
       </form>
-    </dialog>
-
-    <dialog id="splash-modal" class="splash-modal" aria-labelledby="splash-title">
-      <div class="splash-content">
-        <img src="/logo.png" alt="Turtle Flow AI logo" class="splash-logo" />
-        <p class="splash-subtitle">Bring your own API token (optional). Tokens stay only in server memory for this session.</p>
-        <form id="token-form" class="token-form">
-          <label for="token-provider">Provider</label>
-          <select id="token-provider">
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic (compatible endpoint)</option>
-            <option value="gemini">Gemini (compatible endpoint)</option>
-            <option value="custom">Custom compatible API</option>
-          </select>
-          <a id="get-token-link" class="token-link" href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Get a token</a>
-          <label for="token-input">API token</label>
-          <input id="token-input" type="password" autocomplete="off" placeholder="Paste token (optional)" />
-          <label for="token-base-url">Base URL (optional)</label>
-          <input id="token-base-url" type="url" autocomplete="off" placeholder="https://api.openai.com/v1" />
-          <div class="button-row">
-            <button id="save-token-button" type="submit">Use My Token</button>
-            <button id="skip-splash-button" type="button" class="secondary-button">Continue Without Token</button>
-          </div>
-          <p id="token-status" class="token-status" aria-live="polite"></p>
-        </form>
-      </div>
     </dialog>
 
     <script type="module" src="/app.js"></script>

@@ -163,7 +163,6 @@ const MAX_TURN_DURATION_MS = 120;
 const PROJECT_DRAFT_KEY = 'turtlelab.project';
 const PROJECT_HISTORY_KEY = 'turtlelab.projects';
 const MAX_SAVED_PROJECTS = 20;
-const DEFAULT_SPLASH_DISPLAY_DURATION_MS = 2600;
 const PROVIDER_BASE_URLS = {
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com/v1',
@@ -177,8 +176,10 @@ const PROVIDER_TOKEN_URLS = {
   custom: ''
 };
 
+const introPage = document.querySelector('#intro-page');
+const introStartButton = document.querySelector('#intro-start-button');
+const studio = document.querySelector('#studio');
 const promptModal = document.querySelector('#prompt-modal');
-const splashModal = document.querySelector('#splash-modal');
 const tokenForm = document.querySelector('#token-form');
 const tokenProvider = document.querySelector('#token-provider');
 const tokenInput = document.querySelector('#token-input');
@@ -231,8 +232,7 @@ const state = {
   currentPlan: [],
   animationTimer: null,
   animationRaf: null,
-  isGenerating: false,
-  splashTimer: null
+  isGenerating: false
 };
 
 function createCorrelationId() {
@@ -486,20 +486,15 @@ function closePromptModal() {
   }
 }
 
-function closeSplashModal() {
-  if (typeof splashModal.close === 'function') {
-    if (splashModal.open) {
-      splashModal.close();
-    }
-  } else {
-    splashModal.removeAttribute('open');
-  }
-}
+function enterStudio({ openPrompt = false } = {}) {
+  introPage.hidden = true;
+  studio.hidden = false;
+  window.scrollTo(0, 0);
 
-function clearSplashTimer() {
-  if (state.splashTimer) {
-    clearTimeout(state.splashTimer);
-    state.splashTimer = null;
+  if (openPrompt) {
+    window.requestAnimationFrame(() => {
+      openPromptModal();
+    });
   }
 }
 
@@ -594,7 +589,6 @@ async function refreshTokenStatus() {
 
 async function saveSessionToken(event) {
   event.preventDefault();
-  clearSplashTimer();
 
   emitClientTelemetry('token_save_attempt', {
     provider: tokenProvider.value || 'openai'
@@ -627,12 +621,10 @@ async function saveSessionToken(event) {
   tokenInput.value = '';
   setSessionNotice('');
   await refreshTokenStatus();
-  closeSplashModal();
-  openPromptModal();
+  enterStudio({ openPrompt: true });
 }
 
 async function removeSessionToken() {
-  clearSplashTimer();
   const statusResponse = await apiFetch('/api/session/token-status', {}, { flow: 'token-logout' });
   const statusPayload = await readJsonSafe(statusResponse);
   const provider = statusPayload.provider || tokenProvider.value || 'openai';
@@ -653,22 +645,6 @@ async function removeSessionToken() {
     tokenUrl
   );
   await refreshTokenStatus();
-}
-
-function showSplashThenPrompt() {
-  const finishSplash = () => {
-    closeSplashModal();
-    openPromptModal();
-  };
-
-  if (typeof splashModal.showModal === 'function') {
-    splashModal.showModal();
-  } else {
-    splashModal.setAttribute('open', 'open');
-  }
-
-  clearSplashTimer();
-  //state.splashTimer = setTimeout(finishSplash, DEFAULT_SPLASH_DISPLAY_DURATION_MS);
 }
 
 function clearCanvas() {
@@ -909,6 +885,52 @@ function smokePuffAndTeleport(fromCx, fromCy, toCx, toCy, heading, onDone) {
   state.animationRaf = requestAnimationFrame(frame);
 }
 
+function smokePuffAndVanish(cx, cy, onDone) {
+  const SMOKE_DURATION = 350;
+  const startTime = performance.now();
+
+  const particles = Array.from({ length: 8 }, () => ({
+    x: cx + (Math.random() - 0.5) * 10,
+    y: cy + (Math.random() - 0.5) * 10,
+    vx: (Math.random() - 0.5) * 80,
+    vy: -(Math.random() * 40 + 20),
+    r: Math.random() * 9 + 6
+  }));
+
+  let prevTime = startTime;
+
+  const frame = (now) => {
+    const elapsed = now - startTime;
+    const dt = (now - prevTime) / 1000;
+    prevTime = now;
+    const t = Math.min(1, elapsed / SMOKE_DURATION);
+
+    for (const p of particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+
+    spCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+    const alpha = (1 - t) * 0.85;
+    for (const p of particles) {
+      spCtx.beginPath();
+      spCtx.arc(p.x, p.y, Math.max(0.1, p.r * (1 - t * 0.6)), 0, Math.PI * 2);
+      spCtx.fillStyle = `rgba(190, 190, 210, ${alpha})`;
+      spCtx.fill();
+    }
+
+    if (t < 1) {
+      state.animationRaf = requestAnimationFrame(frame);
+    } else {
+      spCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+      state.animationRaf = null;
+      onDone();
+    }
+  };
+
+  state.animationRaf = requestAnimationFrame(frame);
+}
+
 function runSingleCommand(command, turtle) {
   switch (command.cmd) {
     case 'penup':
@@ -1052,6 +1074,12 @@ function renderProgram(program, executionPlan = [], animate = true) {
   const step = () => {
     const command = executionPlan[index];
     if (!command) {
+      // Drawing is complete, make the turtle disappear in a puff of smoke
+      if (index > 0) {
+        smokePuffAndVanish(toCanvasX(turtle.x), toCanvasY(turtle.y), () => {
+          // Animation complete, nothing more to do
+        });
+      }
       return;
     }
 
@@ -1258,7 +1286,6 @@ tokenProvider.addEventListener('change', () => {
   tokenBaseUrl.value = '';
   syncProviderDefaults();
 });
-tokenForm.addEventListener('focusin', clearSplashTimer);
 tokenForm.addEventListener('submit', async (event) => {
   try {
     await saveSessionToken(event);
@@ -1273,10 +1300,11 @@ logoutButton.addEventListener('click', async () => {
     setSessionNotice(error.message);
   }
 });
+introStartButton.addEventListener('click', () => {
+  enterStudio({ openPrompt: true });
+});
 skipSplashButton.addEventListener('click', () => {
-  clearSplashTimer();
-  closeSplashModal();
-  openPromptModal();
+  enterStudio({ openPrompt: true });
 });
 openPromptButton.addEventListener('click', openPromptModal);
 closePromptButton.addEventListener('click', closePromptModal);
@@ -1305,4 +1333,3 @@ loadDraftProject();
 renderSavedProjects();
 syncHighlight();
 clearCanvas();
-showSplashThenPrompt();
