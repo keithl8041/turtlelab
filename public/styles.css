@@ -31,6 +31,14 @@ body {
   gap: 0.5rem;
 }
 
+#open-prompt-button {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: 1.5rem;
@@ -462,6 +470,10 @@ button:disabled {
   .topbar-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  #open-prompt-button {
+    top: 0.5rem;
   }
 
   .layout {
