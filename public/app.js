@@ -224,8 +224,7 @@ const state = {
   currentPlan: [],
   animationTimer: null,
   isGenerating: false,
-  splashTimer: null,
-  hasSessionToken: false
+  splashTimer: null
 };
 
 function setGeneratingUi(isGenerating) {
@@ -429,8 +428,7 @@ function setAiConnectionBadge(status) {
 }
 
 function setTokenStatusUi(status) {
-  state.hasSessionToken = Boolean(status.hasToken);
-  removeTokenButton.disabled = !state.hasSessionToken;
+  removeTokenButton.disabled = !Boolean(status.hasToken);
   setAiConnectionBadge(status);
 
   if (status.hasToken) {
