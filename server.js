@@ -16,6 +16,13 @@ const {
   validateProgram
 } = require('./lib/turtle-program');
 
+let appInsights = null;
+try {
+  appInsights = require('applicationinsights');
+} catch {
+  // applicationinsights is optional during local/test runs without installed dependencies
+}
+
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -25,6 +32,9 @@ const AI_BASE_URL = process.env.AI_BASE_URL || 'https://api.openai.com/v1';
 const AI_API_KEY = process.env.AI_API_KEY || '';
 const AI_MODEL = process.env.AI_MODEL || 'gpt-4.1-mini';
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 15_000);
+const APPINSIGHTS_CONNECTION_STRING = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING
+  || 'InstrumentationKey=46b77f9a-e730-4cc7-93d8-c1e0240495cd;IngestionEndpoint=https://westeurope-5.in.applicationinsights.azure.com/;LiveEndpoint=https://westeurope.livediagnostics.monitor.azure.com/;ApplicationId=59276183-8b45-48d2-9bae-e2f44168981f';
+const IS_TEST_RUNTIME = process.env.NODE_ENV === 'test' || process.argv.includes('--test');
 const SESSION_COOKIE_NAME = 'turtlelab.sid';
 const DEFAULT_SESSION_TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
 const SESSION_TOKEN_TTL_MS = Number(process.env.SESSION_TOKEN_TTL_MS || DEFAULT_SESSION_TOKEN_TTL_MS);
@@ -34,15 +44,15 @@ const SESSION_ID_PATTERN = new RegExp(`^[a-zA-Z0-9-]{${MIN_SESSION_ID_LENGTH},${
 const PROVIDER_DEFAULTS = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4.1-mini'
+    model: 'gpt-5.4-mini'
   },
   anthropic: {
     baseUrl: 'https://api.anthropic.com/v1',
-    model: 'claude-3-5-sonnet-latest'
+    model: 'claude-sonnet-4-6'
   },
   gemini: {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-2.0-flash'
+    model: 'gemini-3-flash-preview'
   },
   custom: {
     baseUrl: AI_BASE_URL,
@@ -102,6 +112,82 @@ Before you write a single command, sketch the full drawing in your head:
 
 const rateLimitStore = new Map();
 const sessionTokenStore = new Map();
+
+let telemetryClient = null;
+if (!IS_TEST_RUNTIME && appInsights && APPINSIGHTS_CONNECTION_STRING) {
+  try {
+    appInsights
+      .setup(APPINSIGHTS_CONNECTION_STRING)
+      .setAutoCollectRequests(true)
+      .setAutoCollectExceptions(true)
+      .setAutoCollectDependencies(true)
+      .setAutoCollectPerformance(false)
+      .setAutoCollectConsole(false)
+      .setUseDiskRetryCaching(true)
+      .start();
+    telemetryClient = appInsights.defaultClient;
+    telemetryClient.commonProperties = {
+      service: 'turtlelab',
+      runtime: 'node'
+    };
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('[Telemetry] Application Insights setup failed:', error.message);
+    telemetryClient = null;
+  }
+}
+
+function truncateValue(value, maxLength = 180) {
+  return String(value || '').slice(0, maxLength);
+}
+
+function sanitizeProperties(properties = {}) {
+  const clean = {};
+  for (const [key, value] of Object.entries(properties)) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+    clean[key] = truncateValue(value, 240);
+  }
+  return clean;
+}
+
+function getOperationId(req) {
+  const headerValue = String(req.headers['x-correlation-id'] || '').trim();
+  if (headerValue && headerValue.length <= 120) {
+    return headerValue;
+  }
+  return createSessionId();
+}
+
+function trackEvent(name, properties = {}, measurements = {}) {
+  if (!telemetryClient) {
+    return;
+  }
+  telemetryClient.trackEvent({
+    name,
+    properties: sanitizeProperties(properties),
+    measurements
+  });
+}
+
+function trackException(error, properties = {}) {
+  if (!telemetryClient || !error) {
+    return;
+  }
+  telemetryClient.trackException({
+    exception: error,
+    properties: sanitizeProperties(properties)
+  });
+}
+
+function baseUrlHost(url) {
+  try {
+    return new URL(String(url || '')).host;
+  } catch {
+    return 'invalid';
+  }
+}
 
 function jsonResponse(res, statusCode, body, extraHeaders = {}) {
   const payload = JSON.stringify(body);
@@ -291,14 +377,26 @@ const FALLBACK_COMMANDS = [
   }
 ];
 
-async function commandsForPrompt(prompt, sessionId) {
+async function commandsForPrompt(prompt, sessionId, operationId = 'none') {
   const aiConfig = resolveAiConfig(sessionId);
 
   if (!aiConfig) {
+    trackEvent('ai_config_missing', {
+      operationId,
+      reason: 'no_token_available'
+    });
     // eslint-disable-next-line no-console
     console.warn('[AI] No session token or AI_API_KEY available — falling back to default commands.');
     return { commands: FALLBACK_COMMANDS, aiUsed: false };
   }
+
+  trackEvent('ai_request_started', {
+    operationId,
+    source: aiConfig.source,
+    provider: aiConfig.provider,
+    model: aiConfig.model,
+    baseUrlHost: baseUrlHost(aiConfig.baseUrl)
+  });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
@@ -323,6 +421,15 @@ async function commandsForPrompt(prompt, sessionId) {
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
+      trackEvent('ai_request_failed', {
+        operationId,
+        source: aiConfig.source,
+        provider: aiConfig.provider,
+        model: aiConfig.model,
+        baseUrlHost: baseUrlHost(aiConfig.baseUrl),
+        statusCode: String(response.status),
+        responsePreview: truncateValue(text, 200)
+      });
       // eslint-disable-next-line no-console
       console.error(`[AI] API error ${response.status}: ${text}`);
       return { commands: FALLBACK_COMMANDS, aiUsed: false };
@@ -331,6 +438,13 @@ async function commandsForPrompt(prompt, sessionId) {
     const json = await response.json();
     const raw = json?.choices?.[0]?.message?.content || '';
     const aiPayload = parseAiTurtleResponse(raw);
+    trackEvent('ai_request_succeeded', {
+      operationId,
+      source: aiConfig.source,
+      provider: aiConfig.provider,
+      model: aiConfig.model,
+      baseUrlHost: baseUrlHost(aiConfig.baseUrl)
+    });
     return {
       commands: aiPayload.commands,
       aiTitle: aiPayload.title,
@@ -341,6 +455,21 @@ async function commandsForPrompt(prompt, sessionId) {
       aiProvider: aiConfig.provider
     };
   } catch (error) {
+    trackException(error, {
+      operationId,
+      source: aiConfig.source,
+      provider: aiConfig.provider,
+      model: aiConfig.model,
+      baseUrlHost: baseUrlHost(aiConfig.baseUrl),
+      stage: 'commandsForPrompt'
+    });
+    trackEvent('ai_request_exception', {
+      operationId,
+      source: aiConfig.source,
+      provider: aiConfig.provider,
+      errorName: error.name,
+      message: truncateValue(error.message, 200)
+    });
     // eslint-disable-next-line no-console
     console.error('[AI] commandsForPrompt failed:', error.message);
     return { commands: FALLBACK_COMMANDS, aiUsed: false };
@@ -393,7 +522,7 @@ function getSuggestions(program) {
   return suggestions.slice(0, 2);
 }
 
-async function buildProgramFromPrompt(prompt, ageMode = 'kids', sessionId = '') {
+async function buildProgramFromPrompt(prompt, ageMode = 'kids', sessionId = '', operationId = 'none') {
   const simplified = shouldSimplify(prompt);
   const {
     commands,
@@ -403,7 +532,7 @@ async function buildProgramFromPrompt(prompt, ageMode = 'kids', sessionId = '') 
     aiTitle,
     aiDescription,
     aiExplanation
-  } = await commandsForPrompt(prompt, sessionId);
+  } = await commandsForPrompt(prompt, sessionId, operationId);
 
   const program = {
     title: aiTitle || 'AI Turtle Drawing',
@@ -512,6 +641,12 @@ function serveStaticFile(res, pathname) {
 
 function handleTokenStatus(res, sessionContext) {
   const tokenEntry = sessionTokenStore.get(sessionContext.sessionId);
+  trackEvent('session_token_status_checked', {
+    operationId: sessionContext.operationId,
+    hasToken: String(Boolean(tokenEntry)),
+    provider: tokenEntry?.provider || 'none',
+    serverFallbackAvailable: String(Boolean(AI_API_KEY))
+  });
   jsonResponse(res, 200, {
     hasToken: Boolean(tokenEntry),
     provider: tokenEntry?.provider || null,
@@ -542,6 +677,13 @@ function handleSetToken(req, res, sessionContext) {
         updatedAt: Date.now()
       });
 
+      trackEvent('session_token_saved', {
+        operationId: sessionContext.operationId,
+        provider,
+        baseUrlHost: baseUrlHost(normalizeBaseUrl(body.baseUrl, defaults.baseUrl)),
+        tokenLength: String(token.length)
+      });
+
       jsonResponse(res, 200, {
         ok: true,
         hasToken: true,
@@ -549,12 +691,21 @@ function handleSetToken(req, res, sessionContext) {
       }, sessionContext.responseHeaders);
     })
     .catch((error) => {
+      trackException(error, {
+        operationId: sessionContext.operationId,
+        route: '/api/session/token'
+      });
       jsonResponse(res, 400, { error: error.message || 'Could not read request.' }, sessionContext.responseHeaders);
     });
 }
 
 function handleClearToken(res, sessionContext) {
+  const hadToken = sessionTokenStore.has(sessionContext.sessionId);
   sessionTokenStore.delete(sessionContext.sessionId);
+  trackEvent('session_token_cleared', {
+    operationId: sessionContext.operationId,
+    hadToken: String(hadToken)
+  });
   jsonResponse(res, 200, {
     ok: true,
     hasToken: false
@@ -562,10 +713,15 @@ function handleClearToken(res, sessionContext) {
 }
 
 function handleGenerate(req, res, sessionContext) {
+  const requestStart = Date.now();
   readJson(req)
     .then(async (body) => {
       const prompt = clampPrompt(body.prompt);
       if (!prompt) {
+        trackEvent('generate_rejected', {
+          operationId: sessionContext.operationId,
+          reason: 'empty_prompt'
+        });
         jsonResponse(res, 400, {
           error: 'Please type what you want the turtle to draw.'
         }, sessionContext.responseHeaders);
@@ -579,8 +735,19 @@ function handleGenerate(req, res, sessionContext) {
         aiUsed,
         aiSource,
         aiProvider
-      } = await buildProgramFromPrompt(prompt, body.ageMode, sessionContext.sessionId);
+      } = await buildProgramFromPrompt(prompt, body.ageMode, sessionContext.sessionId, sessionContext.operationId);
       const displayCode = formatProgram(program);
+
+      trackEvent('generate_completed', {
+        operationId: sessionContext.operationId,
+        aiUsed: String(Boolean(aiUsed)),
+        aiSource: aiSource || 'none',
+        aiProvider: aiProvider || 'none',
+        simplified: String(Boolean(shouldSimplify(prompt)))
+      }, {
+        durationMs: Date.now() - requestStart,
+        promptLength: prompt.length
+      });
 
       jsonResponse(res, 200, {
         program,
@@ -599,6 +766,10 @@ function handleGenerate(req, res, sessionContext) {
       }, sessionContext.responseHeaders);
     })
     .catch((error) => {
+      trackException(error, {
+        operationId: sessionContext.operationId,
+        route: '/api/generate'
+      });
       jsonResponse(res, 400, { error: error.message || 'Could not read request.' }, sessionContext.responseHeaders);
     });
 }
@@ -632,6 +803,10 @@ function handleValidate(req, res, sessionContext) {
       }, sessionContext.responseHeaders);
     })
     .catch((error) => {
+      trackException(error, {
+        operationId: sessionContext.operationId,
+        route: '/api/validate'
+      });
       jsonResponse(res, 400, { valid: false, errors: [{ message: error.message || 'Invalid request.' }] }, sessionContext.responseHeaders);
     });
 }
@@ -679,6 +854,10 @@ function handleExplain(req, res, sessionContext) {
       }, sessionContext.responseHeaders);
     })
     .catch((error) => {
+      trackException(error, {
+        operationId: sessionContext.operationId,
+        route: '/api/explain'
+      });
       jsonResponse(res, 400, {
         valid: false,
         errors: [{ message: error.message || 'Could not read request.' }]
@@ -686,9 +865,45 @@ function handleExplain(req, res, sessionContext) {
     });
 }
 
+function handleClientTelemetry(req, res, sessionContext) {
+  readJson(req)
+    .then((body) => {
+      const eventName = trimTo(body.eventName, 120) || 'client_event';
+      const rawProperties = body.properties && typeof body.properties === 'object' ? body.properties : {};
+      const rawMeasurements = body.measurements && typeof body.measurements === 'object' ? body.measurements : {};
+      const measurements = {};
+      for (const [key, value] of Object.entries(rawMeasurements)) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+          measurements[trimTo(key, 60) || 'value'] = parsed;
+        }
+      }
+
+      trackEvent(eventName, {
+        ...rawProperties,
+        operationId: sessionContext.operationId,
+        sessionIdHash: crypto.createHash('sha256').update(sessionContext.sessionId).digest('hex').slice(0, 16)
+      }, measurements);
+
+      jsonResponse(res, 200, { ok: true }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      trackException(error, {
+        operationId: sessionContext.operationId,
+        route: '/api/telemetry'
+      });
+      jsonResponse(res, 400, { error: error.message || 'Could not read request.' }, sessionContext.responseHeaders);
+    });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const sessionContext = getSessionContext(req);
+  const operationId = getOperationId(req);
+  const sessionContext = {
+    ...getSessionContext(req),
+    operationId
+  };
+  res.setHeader('X-Correlation-Id', operationId);
 
   if (req.method === 'POST' && url.pathname === '/api/generate') {
     const ipAddress = req.socket.remoteAddress || 'unknown';
@@ -725,6 +940,11 @@ const server = http.createServer((req, res) => {
 
   if (req.method === 'POST' && url.pathname === '/api/explain') {
     handleExplain(req, res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/telemetry') {
+    handleClientTelemetry(req, res, sessionContext);
     return;
   }
 

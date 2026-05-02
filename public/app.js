@@ -217,6 +217,9 @@ const suggestionsList = document.querySelector('#suggestions-list');
 const savedProjects = document.querySelector('#saved-projects');
 
 const ctx = canvas.getContext('2d');
+const CLIENT_SESSION_ID = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+  ? crypto.randomUUID()
+  : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 const state = {
   aiCode: '',
@@ -227,6 +230,82 @@ const state = {
   isGenerating: false,
   splashTimer: null
 };
+
+function createCorrelationId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeErrorMessage(error) {
+  if (!error) {
+    return 'Unknown error';
+  }
+  return String(error.message || error).slice(0, 200);
+}
+
+function emitClientTelemetry(eventName, properties = {}, measurements = {}) {
+  const payload = {
+    eventName,
+    properties: {
+      ...properties,
+      clientSessionId: CLIENT_SESSION_ID,
+      page: 'turtlelab'
+    },
+    measurements
+  };
+
+  fetch('/api/telemetry', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    keepalive: true
+  }).catch(() => {
+    // Telemetry should never break user flows.
+  });
+}
+
+async function apiFetch(path, options = {}, telemetryMeta = {}) {
+  const startedAt = performance.now();
+  const correlationId = createCorrelationId();
+  const method = (options.method || 'GET').toUpperCase();
+  const headers = {
+    ...(options.headers || {}),
+    'X-Correlation-Id': correlationId
+  };
+
+  try {
+    const response = await fetch(path, {
+      ...options,
+      headers
+    });
+
+    emitClientTelemetry('client_api_call', {
+      correlationId,
+      path,
+      method,
+      ok: String(response.ok),
+      statusCode: String(response.status),
+      flow: telemetryMeta.flow || 'general'
+    }, {
+      durationMs: Number((performance.now() - startedAt).toFixed(2))
+    });
+
+    return response;
+  } catch (error) {
+    emitClientTelemetry('client_api_exception', {
+      correlationId,
+      path,
+      method,
+      flow: telemetryMeta.flow || 'general',
+      message: normalizeErrorMessage(error)
+    }, {
+      durationMs: Number((performance.now() - startedAt).toFixed(2))
+    });
+    throw error;
+  }
+}
 
 function setGeneratingUi(isGenerating) {
   state.isGenerating = isGenerating;
@@ -492,11 +571,20 @@ async function readJsonSafe(response) {
 }
 
 async function refreshTokenStatus() {
-  const response = await fetch('/api/session/token-status');
+  const response = await apiFetch('/api/session/token-status', {}, { flow: 'token-status' });
   const payload = await readJsonSafe(response);
   if (!response.ok) {
+    emitClientTelemetry('token_status_failed', {
+      statusCode: String(response.status),
+      message: payload.error || 'Could not load token status.'
+    });
     throw new Error(payload.error || 'Could not load token status.');
   }
+  emitClientTelemetry('token_status_loaded', {
+    hasToken: String(Boolean(payload.hasToken)),
+    provider: payload.provider || 'none',
+    serverFallbackAvailable: String(Boolean(payload.serverFallbackAvailable))
+  });
   setTokenStatusUi(payload);
 }
 
@@ -504,7 +592,11 @@ async function saveSessionToken(event) {
   event.preventDefault();
   clearSplashTimer();
 
-  const response = await fetch('/api/session/token', {
+  emitClientTelemetry('token_save_attempt', {
+    provider: tokenProvider.value || 'openai'
+  });
+
+  const response = await apiFetch('/api/session/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -512,12 +604,21 @@ async function saveSessionToken(event) {
       token: tokenInput.value,
       baseUrl: tokenBaseUrl.value
     })
-  });
+  }, { flow: 'token-save' });
   const payload = await readJsonSafe(response);
 
   if (!response.ok) {
+    emitClientTelemetry('token_save_failed', {
+      provider: tokenProvider.value || 'openai',
+      statusCode: String(response.status),
+      message: payload.error || 'Could not save token.'
+    });
     throw new Error(payload.error || 'Could not save token.');
   }
+
+  emitClientTelemetry('token_save_succeeded', {
+    provider: tokenProvider.value || 'openai'
+  });
 
   tokenInput.value = '';
   setSessionNotice('');
@@ -528,14 +629,20 @@ async function saveSessionToken(event) {
 
 async function removeSessionToken() {
   clearSplashTimer();
-  const statusResponse = await fetch('/api/session/token-status');
+  const statusResponse = await apiFetch('/api/session/token-status', {}, { flow: 'token-logout' });
   const statusPayload = await readJsonSafe(statusResponse);
   const provider = statusPayload.provider || tokenProvider.value || 'openai';
-  const response = await fetch('/api/session/token/logout', { method: 'POST' });
+  const response = await apiFetch('/api/session/token/logout', { method: 'POST' }, { flow: 'token-logout' });
   const payload = await readJsonSafe(response);
   if (!response.ok) {
+    emitClientTelemetry('token_logout_failed', {
+      provider,
+      statusCode: String(response.status),
+      message: payload.error || 'Could not remove token.'
+    });
     throw new Error(payload.error || 'Could not remove token.');
   }
+  emitClientTelemetry('token_logout_succeeded', { provider });
   const tokenUrl = selectedProviderTokenUrl(provider);
   setSessionNotice(
     'Logged out. Your session token was removed from the server. For safety, also remove/revoke this key at your provider.',
@@ -809,7 +916,7 @@ async function generateFromPrompt(event) {
       return;
     }
 
-    const response = await fetch('/api/generate', {
+    const response = await apiFetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -817,13 +924,23 @@ async function generateFromPrompt(event) {
         ageMode: 'kids',
         difficulty: 'easy'
       })
-    });
+    }, { flow: 'generate' });
 
     const payload = await response.json();
 
     if (!response.ok) {
+      emitClientTelemetry('generate_failed', {
+        statusCode: String(response.status),
+        message: payload.error || 'The AI got a bit muddled. Try a simpler prompt.'
+      });
       throw new Error(payload.error || 'The AI got a bit muddled. Try a simpler prompt.');
     }
+
+    emitClientTelemetry('generate_succeeded', {
+      aiUsed: String(Boolean(payload.aiUsed)),
+      aiProvider: payload.aiProvider || 'none',
+      aiSource: payload.aiSource || 'none'
+    });
 
     state.currentProgram = payload.program;
     state.currentPlan = payload.executionPlan || flattenCommands(payload.program.commands);
@@ -841,6 +958,9 @@ async function generateFromPrompt(event) {
     saveDraftProject();
     closePromptModal();
   } catch (error) {
+    emitClientTelemetry('generate_exception', {
+      message: normalizeErrorMessage(error)
+    });
     codeError.textContent = error.message;
   } finally {
     setGeneratingUi(false);
@@ -851,11 +971,11 @@ async function runEditedCode() {
   codeError.textContent = '';
 
   try {
-    const response = await fetch('/api/validate', {
+    const response = await apiFetch('/api/validate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: codeEditor.value })
-    });
+    }, { flow: 'validate' });
 
     const payload = await response.json();
 
@@ -873,6 +993,9 @@ async function runEditedCode() {
     renderProgram(payload.program, state.currentPlan, animateToggle.checked);
     saveDraftProject();
   } catch (error) {
+    emitClientTelemetry('validate_exception', {
+      message: normalizeErrorMessage(error)
+    });
     codeError.textContent = error.message;
   }
 }
@@ -950,6 +1073,7 @@ syncProviderDefaults();
 refreshTokenStatus().catch(() => {
   setTokenStatusUi({ hasToken: false, serverFallbackAvailable: false, provider: null });
 });
+emitClientTelemetry('client_app_loaded');
 setupPromptChips();
 loadDraftProject();
 renderSavedProjects();

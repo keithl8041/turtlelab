@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/keithl8041/turtlelab#readme",
   "dependencies": {
+    "applicationinsights": "^3.5.0",
     "dotenv": "^17.4.2"
   }
 }
