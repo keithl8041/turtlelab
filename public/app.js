@@ -859,8 +859,9 @@ function setupPromptChips() {
 }
 
 tokenProvider.addEventListener('change', () => {
-  tokenModel.value = PROVIDER_MODELS[tokenProvider.value] || '';
-  tokenBaseUrl.value = PROVIDER_BASE_URLS[tokenProvider.value] || '';
+  tokenModel.value = '';
+  tokenBaseUrl.value = '';
+  syncProviderDefaults();
 });
 tokenForm.addEventListener('focusin', clearSplashTimer);
 tokenForm.addEventListener('submit', async (event) => {

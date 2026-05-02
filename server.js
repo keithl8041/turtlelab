@@ -26,6 +26,7 @@ const AI_API_KEY = process.env.AI_API_KEY || '';
 const AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini';
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 15_000);
 const SESSION_COOKIE_NAME = 'turtlelab.sid';
+const SESSION_TOKEN_TTL_MS = Number(process.env.SESSION_TOKEN_TTL_MS || 6 * 60 * 60 * 1000);
 const PROVIDER_DEFAULTS = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
@@ -182,11 +183,26 @@ function createSessionId() {
   return crypto.randomBytes(16).toString('hex');
 }
 
-function buildSessionCookie(sessionId) {
-  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`;
+function isHttpsRequest(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').toLowerCase();
+  return req.socket.encrypted || forwardedProto === 'https';
+}
+
+function buildSessionCookie(sessionId, req) {
+  const secureFlag = isHttpsRequest(req) ? '; Secure' : '';
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${secureFlag}`;
+}
+
+function purgeExpiredSessionTokens(now = Date.now()) {
+  for (const [sessionId, entry] of sessionTokenStore.entries()) {
+    if (!entry || now - Number(entry.updatedAt || 0) > SESSION_TOKEN_TTL_MS) {
+      sessionTokenStore.delete(sessionId);
+    }
+  }
 }
 
 function getSessionContext(req) {
+  purgeExpiredSessionTokens();
   const cookies = parseCookies(req.headers.cookie);
   const existing = cookies[SESSION_COOKIE_NAME];
 
@@ -201,7 +217,7 @@ function getSessionContext(req) {
   return {
     sessionId,
     responseHeaders: {
-      'Set-Cookie': buildSessionCookie(sessionId)
+      'Set-Cookie': buildSessionCookie(sessionId, req)
     }
   };
 }
