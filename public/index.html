@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
     <section id="intro-page" class="intro-page" aria-labelledby="intro-title">
       <div class="intro-grid">
         <div class="intro-copy">
@@ -63,12 +64,12 @@
         </div>
       </header>
 
-      <main class="layout">
+      <main id="main-content" class="layout">
         <section class="panel canvas-panel" aria-labelledby="canvas-title">
           <h2 id="canvas-title">Canvas</h2>
           <p class="panel-subtitle">Watch the turtle drawing happen.</p>
           <div class="canvas-wrapper">
-            <canvas id="turtle-canvas" width="800" height="600"></canvas>
+            <canvas id="turtle-canvas" width="800" height="600" aria-label="Turtle drawing output"></canvas>
             <canvas id="turtle-sprite-canvas" width="800" height="600" aria-hidden="true"></canvas>
           </div>
           <div class="button-row">
@@ -86,7 +87,7 @@
           <p class="panel-subtitle">Review the AI code, then edit it to make it better.</p>
           <div class="code-editor-wrapper">
             <pre id="code-highlight" aria-hidden="true"></pre>
-            <textarea id="code-editor" rows="18" spellcheck="false"></textarea>
+            <textarea id="code-editor" rows="18" spellcheck="false" aria-labelledby="code-title"></textarea>
           </div>
           <div class="button-row">
             <button id="run-button" type="button">Run</button>
