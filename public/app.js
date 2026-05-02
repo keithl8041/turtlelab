@@ -452,9 +452,17 @@ function syncProviderDefaults() {
   }
 }
 
+async function readJsonSafe(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
 async function refreshTokenStatus() {
   const response = await fetch('/api/session/token-status');
-  const payload = await response.json();
+  const payload = await readJsonSafe(response);
   if (!response.ok) {
     throw new Error(payload.error || 'Could not load token status.');
   }
@@ -475,7 +483,7 @@ async function saveSessionToken(event) {
       baseUrl: tokenBaseUrl.value
     })
   });
-  const payload = await response.json();
+  const payload = await readJsonSafe(response);
 
   if (!response.ok) {
     throw new Error(payload.error || 'Could not save token.');
@@ -490,7 +498,7 @@ async function saveSessionToken(event) {
 async function removeSessionToken() {
   clearSplashTimer();
   const response = await fetch('/api/session/token/logout', { method: 'POST' });
-  const payload = await response.json();
+  const payload = await readJsonSafe(response);
   if (!response.ok) {
     throw new Error(payload.error || 'Could not remove token.');
   }

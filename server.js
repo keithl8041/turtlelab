@@ -206,7 +206,7 @@ function getSessionContext(req) {
   const cookies = parseCookies(req.headers.cookie);
   const existing = cookies[SESSION_COOKIE_NAME];
 
-  if (existing && /^[a-zA-Z0-9._-]{16,200}$/.test(existing)) {
+  if (existing && /^[a-zA-Z0-9-]{16,200}$/.test(existing)) {
     return {
       sessionId: existing,
       responseHeaders: {}
