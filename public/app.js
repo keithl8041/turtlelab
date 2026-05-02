@@ -217,6 +217,8 @@ const suggestionsList = document.querySelector('#suggestions-list');
 const savedProjects = document.querySelector('#saved-projects');
 
 const ctx = canvas.getContext('2d');
+const spriteCanvas = document.querySelector('#turtle-sprite-canvas');
+const spCtx = spriteCanvas.getContext('2d');
 const CLIENT_SESSION_ID = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
   ? crypto.randomUUID()
   : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -227,6 +229,7 @@ const state = {
   currentProgram: null,
   currentPlan: [],
   animationTimer: null,
+  animationRaf: null,
   isGenerating: false,
   splashTimer: null
 };
@@ -672,6 +675,7 @@ function clearCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  spCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
 }
 
 function toCanvasX(x) {
@@ -716,6 +720,192 @@ function highlightLine(lineNumber) {
   const end = start + (lines[lineNumber - 1] || '').length;
   codeEditor.focus();
   codeEditor.setSelectionRange(start, end);
+}
+
+function drawTurtleSprite(tCtx, cx, cy, heading) {
+  tCtx.save();
+  tCtx.translate(cx, cy);
+  // Canvas Y axis is inverted relative to math, so negate heading for rotation
+  tCtx.rotate(-heading * Math.PI / 180);
+
+  // Legs (drawn behind the shell)
+  tCtx.fillStyle = '#3cb371';
+  tCtx.strokeStyle = '#1a6b3c';
+  tCtx.lineWidth = 1;
+
+  tCtx.beginPath();
+  tCtx.ellipse(8, -13, 4.5, 6.5, -0.35, 0, Math.PI * 2);
+  tCtx.fill();
+  tCtx.stroke();
+
+  tCtx.beginPath();
+  tCtx.ellipse(8, 13, 4.5, 6.5, 0.35, 0, Math.PI * 2);
+  tCtx.fill();
+  tCtx.stroke();
+
+  tCtx.beginPath();
+  tCtx.ellipse(-8, -13, 4.5, 6.5, 0.35, 0, Math.PI * 2);
+  tCtx.fill();
+  tCtx.stroke();
+
+  tCtx.beginPath();
+  tCtx.ellipse(-8, 13, 4.5, 6.5, -0.35, 0, Math.PI * 2);
+  tCtx.fill();
+  tCtx.stroke();
+
+  // Tail
+  tCtx.beginPath();
+  tCtx.ellipse(-17, 0, 4, 3, 0, 0, Math.PI * 2);
+  tCtx.fillStyle = '#3cb371';
+  tCtx.fill();
+  tCtx.stroke();
+
+  // Shell body
+  tCtx.beginPath();
+  tCtx.ellipse(0, 0, 14, 11, 0, 0, Math.PI * 2);
+  tCtx.fillStyle = '#2e8b57';
+  tCtx.fill();
+  tCtx.strokeStyle = '#1a5c35';
+  tCtx.lineWidth = 1.5;
+  tCtx.stroke();
+
+  // Shell pattern — central oval
+  tCtx.beginPath();
+  tCtx.ellipse(0, 0, 6, 5, 0, 0, Math.PI * 2);
+  tCtx.strokeStyle = '#1a5c35';
+  tCtx.lineWidth = 1;
+  tCtx.stroke();
+
+  // Shell pattern — radial lines
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    tCtx.beginPath();
+    tCtx.moveTo(Math.cos(angle) * 6, Math.sin(angle) * 5);
+    tCtx.lineTo(Math.cos(angle) * 12.5, Math.sin(angle) * 9.5);
+    tCtx.stroke();
+  }
+
+  // Head
+  tCtx.beginPath();
+  tCtx.ellipse(18, 0, 7, 5.5, 0, 0, Math.PI * 2);
+  tCtx.fillStyle = '#3cb371';
+  tCtx.fill();
+  tCtx.strokeStyle = '#1a5c35';
+  tCtx.lineWidth = 1.5;
+  tCtx.stroke();
+
+  // Eye white
+  tCtx.beginPath();
+  tCtx.arc(20, -2.5, 2.2, 0, Math.PI * 2);
+  tCtx.fillStyle = '#ffffff';
+  tCtx.fill();
+
+  // Eye pupil
+  tCtx.beginPath();
+  tCtx.arc(20.6, -2.5, 1.2, 0, Math.PI * 2);
+  tCtx.fillStyle = '#111111';
+  tCtx.fill();
+
+  tCtx.restore();
+}
+
+function animateTurtleTo(fromCx, fromCy, toCx, toCy, heading, duration, onDone) {
+  const startTime = performance.now();
+
+  const frame = (now) => {
+    const elapsed = now - startTime;
+    const t = Math.min(1, elapsed / Math.max(1, duration));
+    // Ease in-out cubic
+    const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const cx = fromCx + (toCx - fromCx) * eased;
+    const cy = fromCy + (toCy - fromCy) * eased;
+
+    spCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+    drawTurtleSprite(spCtx, cx, cy, heading);
+
+    if (t < 1) {
+      state.animationRaf = requestAnimationFrame(frame);
+    } else {
+      state.animationRaf = null;
+      onDone();
+    }
+  };
+
+  state.animationRaf = requestAnimationFrame(frame);
+}
+
+function animateTurtleTurn(cx, cy, fromHeading, toHeading, duration, onDone) {
+  const startTime = performance.now();
+
+  let delta = toHeading - fromHeading;
+  while (delta > 180) delta -= 360;
+  while (delta < -180) delta += 360;
+
+  const frame = (now) => {
+    const elapsed = now - startTime;
+    const t = Math.min(1, elapsed / Math.max(1, duration));
+    const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const currentHeading = fromHeading + delta * eased;
+
+    spCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+    drawTurtleSprite(spCtx, cx, cy, currentHeading);
+
+    if (t < 1) {
+      state.animationRaf = requestAnimationFrame(frame);
+    } else {
+      state.animationRaf = null;
+      onDone();
+    }
+  };
+
+  state.animationRaf = requestAnimationFrame(frame);
+}
+
+function smokePuffAndTeleport(fromCx, fromCy, toCx, toCy, heading, onDone) {
+  const SMOKE_DURATION = 350;
+  const startTime = performance.now();
+
+  const particles = Array.from({ length: 8 }, () => ({
+    x: fromCx + (Math.random() - 0.5) * 10,
+    y: fromCy + (Math.random() - 0.5) * 10,
+    vx: (Math.random() - 0.5) * 80,
+    vy: -(Math.random() * 40 + 20),
+    r: Math.random() * 9 + 6
+  }));
+
+  let prevTime = startTime;
+
+  const frame = (now) => {
+    const elapsed = now - startTime;
+    const dt = (now - prevTime) / 1000;
+    prevTime = now;
+    const t = Math.min(1, elapsed / SMOKE_DURATION);
+
+    for (const p of particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+
+    spCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+    const alpha = (1 - t) * 0.85;
+    for (const p of particles) {
+      spCtx.beginPath();
+      spCtx.arc(p.x, p.y, Math.max(0.1, p.r * (1 - t * 0.6)), 0, Math.PI * 2);
+      spCtx.fillStyle = `rgba(190, 190, 210, ${alpha})`;
+      spCtx.fill();
+    }
+
+    if (t < 1) {
+      state.animationRaf = requestAnimationFrame(frame);
+    } else {
+      spCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+      drawTurtleSprite(spCtx, toCx, toCy, heading);
+      state.animationRaf = null;
+      onDone();
+    }
+  };
+
+  state.animationRaf = requestAnimationFrame(frame);
 }
 
 function runSingleCommand(command, turtle) {
@@ -819,6 +1009,10 @@ function stopAnimation() {
     clearTimeout(state.animationTimer);
     state.animationTimer = null;
   }
+  if (state.animationRaf) {
+    cancelAnimationFrame(state.animationRaf);
+    state.animationRaf = null;
+  }
 }
 
 function renderProgram(program, executionPlan = [], animate = true) {
@@ -845,6 +1039,8 @@ function renderProgram(program, executionPlan = [], animate = true) {
     for (const command of executionPlan) {
       runSingleCommand(command, turtle);
     }
+    spCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+    drawTurtleSprite(spCtx, toCanvasX(turtle.x), toCanvasY(turtle.y), turtle.heading);
     return;
   }
 
@@ -858,12 +1054,41 @@ function renderProgram(program, executionPlan = [], animate = true) {
       return;
     }
 
+    const prevX = turtle.x;
+    const prevY = turtle.y;
+    const prevHeading = turtle.heading;
+
     runSingleCommand(command, turtle);
     highlightLine(command.line);
     index += 1;
-    state.animationTimer = setTimeout(step, delay);
+
+    const fromCx = toCanvasX(prevX);
+    const fromCy = toCanvasY(prevY);
+    const toCx = toCanvasX(turtle.x);
+    const toCy = toCanvasY(turtle.y);
+
+    if (command.cmd === 'goto') {
+      smokePuffAndTeleport(fromCx, fromCy, toCx, toCy, turtle.heading, () => {
+        state.animationTimer = setTimeout(step, delay);
+      });
+    } else if (command.cmd === 'forward' || command.cmd === 'backward' || command.cmd === 'home') {
+      animateTurtleTo(fromCx, fromCy, toCx, toCy, turtle.heading, delay, () => {
+        state.animationTimer = setTimeout(step, 0);
+      });
+    } else if (command.cmd === 'left' || command.cmd === 'right' || command.cmd === 'setheading') {
+      const turnDuration = Math.min(delay, 120);
+      animateTurtleTurn(toCx, toCy, prevHeading, turtle.heading, turnDuration, () => {
+        state.animationTimer = setTimeout(step, Math.max(0, delay - turnDuration));
+      });
+    } else {
+      spCtx.clearRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+      drawTurtleSprite(spCtx, toCx, toCy, turtle.heading);
+      state.animationTimer = setTimeout(step, delay);
+    }
   };
 
+  // Draw the turtle at the starting position before the first step
+  drawTurtleSprite(spCtx, toCanvasX(turtle.x), toCanvasY(turtle.y), turtle.heading);
   step();
 }
 
