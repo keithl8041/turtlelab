@@ -160,7 +160,7 @@ function renderSavedProjects() {
     button.type = 'button';
     button.className = 'saved-project-button';
     const title = project.name || project.prompt || 'Saved drawing';
-    button.textContent = title.slice(0, 40);
+    button.textContent = title.length > 40 ? `${title.slice(0, 37)}...` : title;
     button.addEventListener('click', async () => {
       applySavedProject(project);
       await runEditedCode();
@@ -170,9 +170,13 @@ function renderSavedProjects() {
 }
 
 function saveToHistory() {
-  const name = promptInput.value.trim() || `Drawing ${new Date().toLocaleString()}`;
+  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
+  const name = promptInput.value.trim() || `Drawing ${timestamp}`;
+  const entryId = typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const entry = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: entryId,
     name,
     prompt: promptInput.value,
     code: codeEditor.value,
@@ -184,7 +188,7 @@ function saveToHistory() {
     suggestions: Array.from(suggestionsList.children).map((item) => item.textContent)
   };
 
-  const current = getSavedHistory().filter((project) => project.code !== entry.code || project.prompt !== entry.prompt);
+  const current = getSavedHistory().filter((project) => project.code !== entry.code && project.prompt !== entry.prompt);
   setSavedHistory([entry, ...current]);
   renderSavedProjects();
 }

@@ -172,7 +172,7 @@ async function commandsForPrompt(prompt) {
       },
       body: JSON.stringify({
         model: AI_MODEL,
-        temperature: 1.2,
+        temperature: 0.9,
         messages: [
           { role: 'system', content: TURTLE_DSL_SYSTEM_PROMPT },
           { role: 'user', content: `Draw: ${prompt}` }
