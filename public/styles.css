@@ -31,6 +31,14 @@ body {
   gap: 0.5rem;
 }
 
+#open-prompt-button {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: 1.5rem;
@@ -261,12 +269,29 @@ button:disabled {
   box-shadow: none;
 }
 
-#turtle-canvas {
-  width: 100%;
-  height: auto;
+.canvas-wrapper {
+  position: relative;
+  display: block;
+  line-height: 0;
   border: 2px solid #c4b5fd;
   border-radius: 0.5rem;
+  overflow: hidden;
   background: #ffffff;
+}
+
+#turtle-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+#turtle-sprite-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .error {
@@ -445,6 +470,10 @@ button:disabled {
   .topbar-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  #open-prompt-button {
+    top: 0.5rem;
   }
 
   .layout {
