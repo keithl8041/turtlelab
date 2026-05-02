@@ -162,7 +162,7 @@ const DEFAULT_SPEED = 4;
 const PROJECT_DRAFT_KEY = 'turtlelab.project';
 const PROJECT_HISTORY_KEY = 'turtlelab.projects';
 const MAX_SAVED_PROJECTS = 20;
-const SPLASH_DURATION_MS = 2600;
+const SPLASH_DISPLAY_DURATION_MS = 2600;
 
 const promptModal = document.querySelector('#prompt-modal');
 const splashModal = document.querySelector('#splash-modal');
@@ -396,7 +396,7 @@ function showSplashThenPrompt() {
     splashModal.setAttribute('open', 'open');
   }
 
-  setTimeout(finishSplash, SPLASH_DURATION_MS);
+  setTimeout(finishSplash, SPLASH_DISPLAY_DURATION_MS);
 }
 
 function clearCanvas() {
