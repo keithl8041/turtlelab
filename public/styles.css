@@ -3,6 +3,7 @@
   color-scheme: light;
   color: #1f2937;
   background: #eef2ff;
+  --button-shadow-color: rgba(236, 72, 153, 0.24);
 }
 
 * {
@@ -141,7 +142,7 @@ button {
   padding: 0.5rem 1rem;
   cursor: pointer;
   min-height: 40px;
-  box-shadow: 0 6px 12px rgba(236, 72, 153, 0.24);
+  box-shadow: 0 6px 12px var(--button-shadow-color);
 }
 
 button:hover {

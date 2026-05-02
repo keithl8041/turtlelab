@@ -383,9 +383,7 @@ function closePromptModal() {
 function showSplashThenPrompt() {
   const finishSplash = () => {
     if (typeof splashModal.close === 'function') {
-      if (splashModal.open) {
-        splashModal.close();
-      }
+      splashModal.close();
     } else {
       splashModal.removeAttribute('open');
     }
