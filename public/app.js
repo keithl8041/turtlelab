@@ -162,7 +162,7 @@ const DEFAULT_SPEED = 4;
 const PROJECT_DRAFT_KEY = 'turtlelab.project';
 const PROJECT_HISTORY_KEY = 'turtlelab.projects';
 const MAX_SAVED_PROJECTS = 20;
-const SPLASH_DISPLAY_DURATION_MS = 2600;
+const DEFAULT_SPLASH_DISPLAY_DURATION_MS = 2600;
 const PROVIDER_BASE_URLS = {
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com/v1',
@@ -518,7 +518,7 @@ function showSplashThenPrompt() {
   }
 
   clearSplashTimer();
-  state.splashTimer = setTimeout(finishSplash, SPLASH_DISPLAY_DURATION_MS);
+  state.splashTimer = setTimeout(finishSplash, DEFAULT_SPLASH_DISPLAY_DURATION_MS);
 }
 
 function clearCanvas() {

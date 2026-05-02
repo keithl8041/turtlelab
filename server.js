@@ -26,7 +26,10 @@ const AI_API_KEY = process.env.AI_API_KEY || '';
 const AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini';
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 15_000);
 const SESSION_COOKIE_NAME = 'turtlelab.sid';
-const SESSION_TOKEN_TTL_MS = Number(process.env.SESSION_TOKEN_TTL_MS || 6 * 60 * 60 * 1000);
+const DEFAULT_SESSION_TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
+const SESSION_TOKEN_TTL_MS = Number(process.env.SESSION_TOKEN_TTL_MS || DEFAULT_SESSION_TOKEN_TTL_MS);
+const MIN_SESSION_ID_LENGTH = 16;
+const MAX_SESSION_ID_LENGTH = 200;
 const PROVIDER_DEFAULTS = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
@@ -206,7 +209,8 @@ function getSessionContext(req) {
   const cookies = parseCookies(req.headers.cookie);
   const existing = cookies[SESSION_COOKIE_NAME];
 
-  if (existing && /^[a-zA-Z0-9-]{16,200}$/.test(existing)) {
+  const sessionIdPattern = new RegExp(`^[a-zA-Z0-9-]{${MIN_SESSION_ID_LENGTH},${MAX_SESSION_ID_LENGTH}}$`);
+  if (existing && sessionIdPattern.test(existing)) {
     return {
       sessionId: existing,
       responseHeaders: {}
