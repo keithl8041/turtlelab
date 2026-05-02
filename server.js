@@ -6,6 +6,7 @@ try {
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { URL } = require('node:url');
 const {
   defaultSettings,
@@ -24,6 +25,25 @@ const AI_BASE_URL = process.env.AI_BASE_URL || 'https://api.openai.com/v1';
 const AI_API_KEY = process.env.AI_API_KEY || '';
 const AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini';
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 15_000);
+const SESSION_COOKIE_NAME = 'turtlelab.sid';
+const PROVIDER_DEFAULTS = {
+  openai: {
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini'
+  },
+  anthropic: {
+    baseUrl: 'https://api.anthropic.com/v1',
+    model: 'claude-3-5-sonnet-latest'
+  },
+  gemini: {
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: 'gemini-2.0-flash'
+  },
+  custom: {
+    baseUrl: AI_BASE_URL,
+    model: AI_MODEL
+  }
+};
 
 const TURTLE_DSL_SYSTEM_PROMPT = `You are a Logo turtle graphics code generator for children. Return only valid JSON.
 
@@ -76,14 +96,16 @@ Before you write a single command, sketch the full drawing in your head:
 `;
 
 const rateLimitStore = new Map();
+const sessionTokenStore = new Map();
 
-function jsonResponse(res, statusCode, body) {
+function jsonResponse(res, statusCode, body, extraHeaders = {}) {
   const payload = JSON.stringify(body);
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(payload),
     'X-Content-Type-Options': 'nosniff',
-    'Cache-Control': 'no-store'
+    'Cache-Control': 'no-store',
+    ...extraHeaders
   });
   res.end(payload);
 }
@@ -134,6 +156,103 @@ function clampPrompt(rawPrompt) {
   return String(rawPrompt || '').replace(/[<>]/g, '').slice(0, 240).trim();
 }
 
+function parseCookies(cookieHeader) {
+  const cookies = {};
+  const raw = String(cookieHeader || '');
+  for (const part of raw.split(';')) {
+    const trimmed = part.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const separator = trimmed.indexOf('=');
+    if (separator < 1) {
+      continue;
+    }
+    const key = trimmed.slice(0, separator).trim();
+    const value = trimmed.slice(separator + 1).trim();
+    cookies[key] = decodeURIComponent(value);
+  }
+  return cookies;
+}
+
+function createSessionId() {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function buildSessionCookie(sessionId) {
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`;
+}
+
+function getSessionContext(req) {
+  const cookies = parseCookies(req.headers.cookie);
+  const existing = cookies[SESSION_COOKIE_NAME];
+
+  if (existing && /^[a-zA-Z0-9._-]{16,200}$/.test(existing)) {
+    return {
+      sessionId: existing,
+      responseHeaders: {}
+    };
+  }
+
+  const sessionId = createSessionId();
+  return {
+    sessionId,
+    responseHeaders: {
+      'Set-Cookie': buildSessionCookie(sessionId)
+    }
+  };
+}
+
+function providerDefaults(provider) {
+  return PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.openai;
+}
+
+function normalizeProvider(rawProvider) {
+  const provider = String(rawProvider || 'openai').toLowerCase();
+  return Object.hasOwn(PROVIDER_DEFAULTS, provider) ? provider : 'openai';
+}
+
+function trimTo(value, maxLength) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function normalizeBaseUrl(url, fallback) {
+  const base = trimTo(url || fallback, 240).replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(base)) {
+    return fallback.replace(/\/+$/, '');
+  }
+  return base;
+}
+
+function resolveAiConfig(sessionId) {
+  const sessionToken = sessionTokenStore.get(sessionId);
+  if (sessionToken) {
+    const defaults = providerDefaults(sessionToken.provider);
+    return {
+      apiKey: sessionToken.token,
+      baseUrl: normalizeBaseUrl(sessionToken.baseUrl, defaults.baseUrl),
+      model: trimTo(sessionToken.model || defaults.model, 120) || defaults.model,
+      source: 'session',
+      provider: sessionToken.provider
+    };
+  }
+
+  if (AI_API_KEY) {
+    return {
+      apiKey: AI_API_KEY,
+      baseUrl: normalizeBaseUrl(AI_BASE_URL, PROVIDER_DEFAULTS.openai.baseUrl),
+      model: trimTo(AI_MODEL, 120) || PROVIDER_DEFAULTS.openai.model,
+      source: 'server',
+      provider: 'server-default'
+    };
+  }
+
+  return null;
+}
+
 const FALLBACK_COMMANDS = [
   { cmd: 'penup' },
   { cmd: 'home' },
@@ -152,10 +271,12 @@ const FALLBACK_COMMANDS = [
   }
 ];
 
-async function commandsForPrompt(prompt) {
-  if (!AI_API_KEY) {
+async function commandsForPrompt(prompt, sessionId) {
+  const aiConfig = resolveAiConfig(sessionId);
+
+  if (!aiConfig) {
     // eslint-disable-next-line no-console
-    console.warn('[AI] AI_API_KEY is not set — falling back to default commands.');
+    console.warn('[AI] No session token or AI_API_KEY available — falling back to default commands.');
     return { commands: FALLBACK_COMMANDS, aiUsed: false };
   }
 
@@ -163,15 +284,15 @@ async function commandsForPrompt(prompt) {
   const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
+    const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
       method: 'POST',
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AI_API_KEY}`
+        'Authorization': `Bearer ${aiConfig.apiKey}`
       },
       body: JSON.stringify({
-        model: AI_MODEL,
+        model: aiConfig.model,
         temperature: 0.9,
         messages: [
           { role: 'system', content: TURTLE_DSL_SYSTEM_PROMPT },
@@ -195,7 +316,9 @@ async function commandsForPrompt(prompt) {
       aiTitle: aiPayload.title,
       aiDescription: aiPayload.description,
       aiExplanation: aiPayload.explanation,
-      aiUsed: true
+      aiUsed: true,
+      aiSource: aiConfig.source,
+      aiProvider: aiConfig.provider
     };
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -250,15 +373,17 @@ function getSuggestions(program) {
   return suggestions.slice(0, 2);
 }
 
-async function buildProgramFromPrompt(prompt, ageMode = 'kids') {
+async function buildProgramFromPrompt(prompt, ageMode = 'kids', sessionId = '') {
   const simplified = shouldSimplify(prompt);
   const {
     commands,
     aiUsed,
+    aiSource,
+    aiProvider,
     aiTitle,
     aiDescription,
     aiExplanation
-  } = await commandsForPrompt(prompt);
+  } = await commandsForPrompt(prompt, sessionId);
 
   const program = {
     title: aiTitle || 'AI Turtle Drawing',
@@ -278,7 +403,7 @@ async function buildProgramFromPrompt(prompt, ageMode = 'kids') {
     warnings.push('I made a simpler version so the turtle could draw it.');
   }
   if (!aiUsed) {
-    warnings.push('The AI drawing service is unavailable — showing a sample drawing instead.');
+    warnings.push('No AI token found (or provider unavailable) — showing a sample drawing instead.');
   }
 
   const validation = validateProgram(program);
@@ -309,7 +434,9 @@ async function buildProgramFromPrompt(prompt, ageMode = 'kids') {
       program: fallbackValidation.program,
       warnings: [...warnings, 'The AI got a bit muddled, so I used a safe starter drawing.'],
       executionPlan: fallbackValidation.executionPlan,
-      aiUsed
+      aiUsed,
+      aiSource,
+      aiProvider
     };
   }
 
@@ -317,7 +444,9 @@ async function buildProgramFromPrompt(prompt, ageMode = 'kids') {
     program: validation.program,
     warnings,
     executionPlan: validation.executionPlan,
-    aiUsed
+    aiUsed,
+    aiSource,
+    aiProvider
   };
 }
 
@@ -361,18 +490,77 @@ function serveStaticFile(res, pathname) {
   });
 }
 
-function handleGenerate(req, res) {
+function handleTokenStatus(res, sessionContext) {
+  const tokenEntry = sessionTokenStore.get(sessionContext.sessionId);
+  jsonResponse(res, 200, {
+    hasToken: Boolean(tokenEntry),
+    provider: tokenEntry?.provider || null,
+    model: tokenEntry?.model || null,
+    baseUrl: tokenEntry?.baseUrl || null,
+    serverFallbackAvailable: Boolean(AI_API_KEY)
+  }, sessionContext.responseHeaders);
+}
+
+function handleSetToken(req, res, sessionContext) {
+  readJson(req)
+    .then((body) => {
+      const provider = normalizeProvider(body.provider);
+      const defaults = providerDefaults(provider);
+      const token = trimTo(body.token, 500);
+
+      if (!token) {
+        jsonResponse(res, 400, {
+          error: 'Please provide an API token.'
+        }, sessionContext.responseHeaders);
+        return;
+      }
+
+      sessionTokenStore.set(sessionContext.sessionId, {
+        provider,
+        token,
+        baseUrl: normalizeBaseUrl(body.baseUrl, defaults.baseUrl),
+        model: trimTo(body.model || defaults.model, 120) || defaults.model,
+        updatedAt: Date.now()
+      });
+
+      jsonResponse(res, 200, {
+        ok: true,
+        hasToken: true,
+        provider
+      }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      jsonResponse(res, 400, { error: error.message || 'Could not read request.' }, sessionContext.responseHeaders);
+    });
+}
+
+function handleClearToken(res, sessionContext) {
+  sessionTokenStore.delete(sessionContext.sessionId);
+  jsonResponse(res, 200, {
+    ok: true,
+    hasToken: false
+  }, sessionContext.responseHeaders);
+}
+
+function handleGenerate(req, res, sessionContext) {
   readJson(req)
     .then(async (body) => {
       const prompt = clampPrompt(body.prompt);
       if (!prompt) {
         jsonResponse(res, 400, {
           error: 'Please type what you want the turtle to draw.'
-        });
+        }, sessionContext.responseHeaders);
         return;
       }
 
-      const { program, warnings, executionPlan, aiUsed } = await buildProgramFromPrompt(prompt, body.ageMode);
+      const {
+        program,
+        warnings,
+        executionPlan,
+        aiUsed,
+        aiSource,
+        aiProvider
+      } = await buildProgramFromPrompt(prompt, body.ageMode, sessionContext.sessionId);
       const displayCode = formatProgram(program);
 
       jsonResponse(res, 200, {
@@ -382,19 +570,21 @@ function handleGenerate(req, res) {
         suggestions: getSuggestions(program),
         executionPlan,
         aiUsed,
+        aiSource,
+        aiProvider,
         aiOverview: program.explanation,
         workflowHint: 'Suggest → Review → Edit: the AI guessed first, now try fixing the code to improve the drawing.',
         transparencyNote: aiUsed
           ? 'The AI turned your words into turtle code. You can check and change its code below.'
-          : 'This is a sample drawing. Set AI_API_KEY to enable AI-generated drawings.'
-      });
+          : 'This is a sample drawing. Add your own API token in the splash screen (optional).'
+      }, sessionContext.responseHeaders);
     })
     .catch((error) => {
-      jsonResponse(res, 400, { error: error.message || 'Could not read request.' });
+      jsonResponse(res, 400, { error: error.message || 'Could not read request.' }, sessionContext.responseHeaders);
     });
 }
 
-function handleValidate(req, res) {
+function handleValidate(req, res, sessionContext) {
   readJson(req)
     .then((body) => {
       const parseResult = parseDisplayCode(body.code || '');
@@ -406,7 +596,7 @@ function handleValidate(req, res) {
             line: error.line,
             message: error.message
           }))
-        });
+        }, sessionContext.responseHeaders);
         return;
       }
 
@@ -420,14 +610,14 @@ function handleValidate(req, res) {
         program,
         executionPlan: parseResult.executionPlan,
         displayCode: formatProgram(program)
-      });
+      }, sessionContext.responseHeaders);
     })
     .catch((error) => {
-      jsonResponse(res, 400, { valid: false, errors: [{ message: error.message || 'Invalid request.' }] });
+      jsonResponse(res, 400, { valid: false, errors: [{ message: error.message || 'Invalid request.' }] }, sessionContext.responseHeaders);
     });
 }
 
-function handleExplain(req, res) {
+function handleExplain(req, res, sessionContext) {
   readJson(req)
     .then((body) => {
       if (typeof body.code === 'string') {
@@ -436,14 +626,14 @@ function handleExplain(req, res) {
           jsonResponse(res, 200, {
             valid: false,
             errors: parsed.errors
-          });
+          }, sessionContext.responseHeaders);
           return;
         }
 
         jsonResponse(res, 200, {
           valid: true,
           explanation: explainProgram(parsed.program)
-        });
+        }, sessionContext.responseHeaders);
         return;
       }
 
@@ -453,53 +643,69 @@ function handleExplain(req, res) {
           jsonResponse(res, 200, {
             valid: false,
             errors: validation.errors
-          });
+          }, sessionContext.responseHeaders);
           return;
         }
 
         jsonResponse(res, 200, {
           valid: true,
           explanation: explainProgram(validation.program)
-        });
+        }, sessionContext.responseHeaders);
         return;
       }
 
       jsonResponse(res, 400, {
         valid: false,
         errors: [{ message: 'Please provide code or a program to explain.' }]
-      });
+      }, sessionContext.responseHeaders);
     })
     .catch((error) => {
       jsonResponse(res, 400, {
         valid: false,
         errors: [{ message: error.message || 'Could not read request.' }]
-      });
+      }, sessionContext.responseHeaders);
     });
 }
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  const sessionContext = getSessionContext(req);
 
   if (req.method === 'POST' && url.pathname === '/api/generate') {
     const ipAddress = req.socket.remoteAddress || 'unknown';
-    if (isRateLimited(ipAddress)) {
-      jsonResponse(res, 429, {
-        error: 'Too many drawing requests right now. Please try again in a moment.'
-      });
-      return;
-    }
+      if (isRateLimited(ipAddress)) {
+        jsonResponse(res, 429, {
+          error: 'Too many drawing requests right now. Please try again in a moment.'
+        }, sessionContext.responseHeaders);
+        return;
+      }
 
-    handleGenerate(req, res);
+    handleGenerate(req, res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/session/token-status') {
+    handleTokenStatus(res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/session/token') {
+    handleSetToken(req, res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/session/token/logout') {
+    handleClearToken(res, sessionContext);
     return;
   }
 
   if (req.method === 'POST' && url.pathname === '/api/validate') {
-    handleValidate(req, res);
+    handleValidate(req, res, sessionContext);
     return;
   }
 
   if (req.method === 'POST' && url.pathname === '/api/explain') {
-    handleExplain(req, res);
+    handleExplain(req, res, sessionContext);
     return;
   }
 

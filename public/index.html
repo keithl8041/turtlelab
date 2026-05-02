@@ -9,7 +9,10 @@
   <body>
     <header class="topbar">
       <h1>Turtle Flow AI</h1>
-      <button id="open-prompt-button" type="button">Draw Something Else</button>
+      <div class="topbar-actions">
+        <span id="ai-connection-badge" class="ai-connection-badge">AI: Optional</span>
+        <button id="open-prompt-button" type="button">Draw Something Else</button>
+      </div>
     </header>
 
     <main class="layout">
@@ -87,6 +90,28 @@
       <div class="splash-content">
         <img src="/logo.png" alt="Turtle Flow AI logo" class="splash-logo" />
         <h2 id="splash-title">Welcome to Turtle Flow AI</h2>
+        <p class="splash-subtitle">Bring your own API token (optional). Tokens stay only in server memory for this session.</p>
+        <form id="token-form" class="token-form">
+          <label for="token-provider">Provider</label>
+          <select id="token-provider">
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic (compatible endpoint)</option>
+            <option value="gemini">Gemini (compatible endpoint)</option>
+            <option value="custom">Custom compatible API</option>
+          </select>
+          <label for="token-input">API token</label>
+          <input id="token-input" type="password" autocomplete="off" placeholder="Paste token (optional)" />
+          <label for="token-model">Model (optional)</label>
+          <input id="token-model" type="text" autocomplete="off" placeholder="gpt-4o-mini" />
+          <label for="token-base-url">Base URL (optional)</label>
+          <input id="token-base-url" type="url" autocomplete="off" placeholder="https://api.openai.com/v1" />
+          <div class="button-row">
+            <button id="save-token-button" type="submit">Use My Token</button>
+            <button id="remove-token-button" type="button" class="secondary-button">Log out & Remove Token</button>
+            <button id="skip-splash-button" type="button" class="secondary-button">Continue Without Token</button>
+          </div>
+          <p id="token-status" class="token-status" aria-live="polite"></p>
+        </form>
       </div>
     </dialog>
 

@@ -163,9 +163,30 @@ const PROJECT_DRAFT_KEY = 'turtlelab.project';
 const PROJECT_HISTORY_KEY = 'turtlelab.projects';
 const MAX_SAVED_PROJECTS = 20;
 const SPLASH_DISPLAY_DURATION_MS = 2600;
+const PROVIDER_BASE_URLS = {
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  custom: ''
+};
+const PROVIDER_MODELS = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-3-5-sonnet-latest',
+  gemini: 'gemini-2.0-flash',
+  custom: ''
+};
 
 const promptModal = document.querySelector('#prompt-modal');
 const splashModal = document.querySelector('#splash-modal');
+const tokenForm = document.querySelector('#token-form');
+const tokenProvider = document.querySelector('#token-provider');
+const tokenInput = document.querySelector('#token-input');
+const tokenModel = document.querySelector('#token-model');
+const tokenBaseUrl = document.querySelector('#token-base-url');
+const tokenStatus = document.querySelector('#token-status');
+const removeTokenButton = document.querySelector('#remove-token-button');
+const skipSplashButton = document.querySelector('#skip-splash-button');
+const aiConnectionBadge = document.querySelector('#ai-connection-badge');
 const openPromptButton = document.querySelector('#open-prompt-button');
 const closePromptButton = document.querySelector('#close-prompt-button');
 const promptForm = document.querySelector('#prompt-form');
@@ -202,7 +223,9 @@ const state = {
   currentProgram: null,
   currentPlan: [],
   animationTimer: null,
-  isGenerating: false
+  isGenerating: false,
+  splashTimer: null,
+  hasSessionToken: false
 };
 
 function setGeneratingUi(isGenerating) {
@@ -380,13 +403,103 @@ function closePromptModal() {
   }
 }
 
+function closeSplashModal() {
+  if (typeof splashModal.close === 'function') {
+    if (splashModal.open) {
+      splashModal.close();
+    }
+  } else {
+    splashModal.removeAttribute('open');
+  }
+}
+
+function clearSplashTimer() {
+  if (state.splashTimer) {
+    clearTimeout(state.splashTimer);
+    state.splashTimer = null;
+  }
+}
+
+function setAiConnectionBadge(status) {
+  if (status.hasToken) {
+    aiConnectionBadge.textContent = `AI: ${status.provider}`;
+    return;
+  }
+  aiConnectionBadge.textContent = status.serverFallbackAvailable ? 'AI: Server key' : 'AI: Optional';
+}
+
+function setTokenStatusUi(status) {
+  state.hasSessionToken = Boolean(status.hasToken);
+  removeTokenButton.disabled = !state.hasSessionToken;
+  setAiConnectionBadge(status);
+
+  if (status.hasToken) {
+    tokenStatus.textContent = `Using ${status.provider} token in this session.`;
+  } else if (status.serverFallbackAvailable) {
+    tokenStatus.textContent = 'No personal token set. The app can still use a server default key.';
+  } else {
+    tokenStatus.textContent = 'No token set. You can still use saved examples or edit code manually.';
+  }
+}
+
+function syncProviderDefaults() {
+  const provider = tokenProvider.value || 'openai';
+  if (!tokenModel.value) {
+    tokenModel.value = PROVIDER_MODELS[provider] || '';
+  }
+  if (!tokenBaseUrl.value) {
+    tokenBaseUrl.value = PROVIDER_BASE_URLS[provider] || '';
+  }
+}
+
+async function refreshTokenStatus() {
+  const response = await fetch('/api/session/token-status');
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not load token status.');
+  }
+  setTokenStatusUi(payload);
+}
+
+async function saveSessionToken(event) {
+  event.preventDefault();
+  clearSplashTimer();
+
+  const response = await fetch('/api/session/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: tokenProvider.value,
+      token: tokenInput.value,
+      model: tokenModel.value,
+      baseUrl: tokenBaseUrl.value
+    })
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not save token.');
+  }
+
+  tokenInput.value = '';
+  await refreshTokenStatus();
+  closeSplashModal();
+  openPromptModal();
+}
+
+async function removeSessionToken() {
+  clearSplashTimer();
+  const response = await fetch('/api/session/token/logout', { method: 'POST' });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not remove token.');
+  }
+  await refreshTokenStatus();
+}
+
 function showSplashThenPrompt() {
   const finishSplash = () => {
-    if (typeof splashModal.close === 'function') {
-      splashModal.close();
-    } else {
-      splashModal.removeAttribute('open');
-    }
+    closeSplashModal();
     openPromptModal();
   };
 
@@ -396,7 +509,8 @@ function showSplashThenPrompt() {
     splashModal.setAttribute('open', 'open');
   }
 
-  setTimeout(finishSplash, SPLASH_DISPLAY_DURATION_MS);
+  clearSplashTimer();
+  state.splashTimer = setTimeout(finishSplash, SPLASH_DISPLAY_DURATION_MS);
 }
 
 function clearCanvas() {
@@ -744,6 +858,30 @@ function setupPromptChips() {
   }
 }
 
+tokenProvider.addEventListener('change', () => {
+  tokenModel.value = PROVIDER_MODELS[tokenProvider.value] || '';
+  tokenBaseUrl.value = PROVIDER_BASE_URLS[tokenProvider.value] || '';
+});
+tokenForm.addEventListener('focusin', clearSplashTimer);
+tokenForm.addEventListener('submit', async (event) => {
+  try {
+    await saveSessionToken(event);
+  } catch (error) {
+    tokenStatus.textContent = error.message;
+  }
+});
+removeTokenButton.addEventListener('click', async () => {
+  try {
+    await removeSessionToken();
+  } catch (error) {
+    tokenStatus.textContent = error.message;
+  }
+});
+skipSplashButton.addEventListener('click', () => {
+  clearSplashTimer();
+  closeSplashModal();
+  openPromptModal();
+});
 openPromptButton.addEventListener('click', openPromptModal);
 closePromptButton.addEventListener('click', closePromptModal);
 promptForm.addEventListener('submit', generateFromPrompt);
@@ -761,6 +899,10 @@ replayButton.addEventListener('click', () => {
 });
 clearButton.addEventListener('click', clearCanvas);
 
+syncProviderDefaults();
+refreshTokenStatus().catch(() => {
+  setTokenStatusUi({ hasToken: false, serverFallbackAvailable: false, provider: null });
+});
 setupPromptChips();
 loadDraftProject();
 renderSavedProjects();

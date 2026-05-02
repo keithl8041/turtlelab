@@ -11,6 +11,12 @@ npm start
 
 Open http://localhost:3000.
 
+## AI token options
+
+- You can bring your own compatible API token from the splash screen.
+- Tokens are kept only in server memory for the current session and are never persisted.
+- If no token is provided, the app still works with built-in/sample drawing flows.
+
 ## Test
 
 ```bash
