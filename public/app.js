@@ -159,6 +159,7 @@ forward(25)`;
 const MIN_SPEED = 1;
 const MAX_SPEED = 10;
 const DEFAULT_SPEED = 4;
+const MAX_TURN_DURATION_MS = 120;
 const PROJECT_DRAFT_KEY = 'turtlelab.project';
 const PROJECT_HISTORY_KEY = 'turtlelab.projects';
 const MAX_SAVED_PROJECTS = 20;
@@ -1076,7 +1077,7 @@ function renderProgram(program, executionPlan = [], animate = true) {
         state.animationTimer = setTimeout(step, 0);
       });
     } else if (command.cmd === 'left' || command.cmd === 'right' || command.cmd === 'setheading') {
-      const turnDuration = Math.min(delay, 120);
+      const turnDuration = Math.min(delay, MAX_TURN_DURATION_MS);
       animateTurtleTurn(toCx, toCy, prevHeading, turtle.heading, turnDuration, () => {
         state.animationTimer = setTimeout(step, Math.max(0, delay - turnDuration));
       });
