@@ -30,6 +30,7 @@ const DEFAULT_SESSION_TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
 const SESSION_TOKEN_TTL_MS = Number(process.env.SESSION_TOKEN_TTL_MS || DEFAULT_SESSION_TOKEN_TTL_MS);
 const MIN_SESSION_ID_LENGTH = 16;
 const MAX_SESSION_ID_LENGTH = 200;
+const SESSION_ID_PATTERN = new RegExp(`^[a-zA-Z0-9-]{${MIN_SESSION_ID_LENGTH},${MAX_SESSION_ID_LENGTH}}$`);
 const PROVIDER_DEFAULTS = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
@@ -209,8 +210,7 @@ function getSessionContext(req) {
   const cookies = parseCookies(req.headers.cookie);
   const existing = cookies[SESSION_COOKIE_NAME];
 
-  const sessionIdPattern = new RegExp(`^[a-zA-Z0-9-]{${MIN_SESSION_ID_LENGTH},${MAX_SESSION_ID_LENGTH}}$`);
-  if (existing && sessionIdPattern.test(existing)) {
+  if (existing && SESSION_ID_PATTERN.test(existing)) {
     return {
       sessionId: existing,
       responseHeaders: {}
