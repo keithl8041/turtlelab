@@ -21,7 +21,7 @@
           <p class="intro-body">
             Start with a prompt, let the app suggest a drawing program, then review the generated code, edit it by hand,
             replay the turtle path, and save versions you want to keep. If you want live AI generation through your own
-            provider account, you can add a session-only API token here before entering the studio.
+            provider account, you can add a session-only API key here before entering the studio.
           </p>
           <div class="button-row intro-actions">
             <button id="intro-start-button" type="button">Start Drawing</button>
@@ -30,7 +30,7 @@
 
         <section class="panel intro-setup" aria-labelledby="setup-title">
           <h2 id="setup-title">Optional AI setup</h2>
-          <p class="panel-subtitle">Bring your own API token if you want the app to use your provider account. Tokens stay only in server memory for this session.</p>
+          <p class="panel-subtitle">Bring your own API key if you want the app to use your provider account. Keys stay only in server memory for this session.</p>
           <form id="token-form" class="token-form">
             <label for="token-provider">Provider</label>
             <select id="token-provider">
@@ -39,14 +39,14 @@
               <option value="gemini">Gemini (compatible endpoint)</option>
               <option value="custom">Custom compatible API</option>
             </select>
-            <a id="get-token-link" class="token-link" href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Get a token</a>
-            <label for="token-input">API token</label>
-            <input id="token-input" type="password" autocomplete="off" placeholder="Paste token (optional)" />
+            <a id="get-token-link" class="token-link" href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Get an API key</a>
+            <label for="token-input">API key</label>
+            <input id="token-input" type="password" autocomplete="off" placeholder="Paste API key (optional)" />
             <label for="token-base-url">Base URL (optional)</label>
             <input id="token-base-url" type="url" autocomplete="off" placeholder="https://api.openai.com/v1" />
             <div class="button-row">
-              <button id="save-token-button" type="submit">Use My Token</button>
-              <button id="skip-splash-button" type="button" class="secondary-button">Continue Without Token</button>
+              <button id="save-token-button" type="submit">Use My API Key</button>
+              <button id="skip-splash-button" type="button" class="secondary-button">Continue Without Key</button>
             </div>
             <p id="token-status" class="token-status" aria-live="polite"></p>
           </form>
@@ -58,7 +58,7 @@
       <header class="topbar">
         <h1>Turtle Flow AI</h1>
         <div class="topbar-actions">
-          <span id="ai-connection-badge" class="ai-connection-badge">AI: Optional</span>
+          <button id="ai-connection-badge" type="button" class="ai-connection-badge" title="Configure AI settings">AI: Optional</button>
           <button id="logout-button" type="button" class="secondary-button" hidden>Log out</button>
           <button id="open-prompt-button" type="button">Draw Something Else</button>
         </div>

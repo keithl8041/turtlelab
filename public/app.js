@@ -486,6 +486,12 @@ function closePromptModal() {
   }
 }
 
+function enterIntroPage() {
+  studio.hidden = true;
+  introPage.hidden = false;
+  window.scrollTo(0, 0);
+}
+
 function enterStudio({ openPrompt = false } = {}) {
   introPage.hidden = true;
   studio.hidden = false;
@@ -545,11 +551,11 @@ function setTokenStatusUi(status) {
   setProviderHelpLink(status.provider || tokenProvider.value || 'openai');
 
   if (status.hasToken) {
-    tokenStatus.textContent = `Using ${status.provider} token in this session with the app default model.`;
+    tokenStatus.textContent = `Using ${status.provider} API key in this session with the app default model.`;
   } else if (status.serverFallbackAvailable) {
-    tokenStatus.textContent = 'No personal token set. The app can still use a server default key.';
+    tokenStatus.textContent = 'No personal API key set. The app can still use a server default key.';
   } else {
-    tokenStatus.textContent = 'No token set. You can still use saved examples or edit code manually.';
+    tokenStatus.textContent = 'No API key set. You can still use saved examples or edit code manually.';
   }
 }
 
@@ -641,7 +647,7 @@ async function removeSessionToken() {
   emitClientTelemetry('token_logout_succeeded', { provider });
   const tokenUrl = selectedProviderTokenUrl(provider);
   setSessionNotice(
-    'Logged out. Your session token was removed from the server. For safety, also remove/revoke this key at your provider.',
+    'Logged out. Your session API key was removed from the server. For safety, also remove/revoke this key at your provider.',
     tokenUrl
   );
   await refreshTokenStatus();
@@ -1293,9 +1299,14 @@ tokenForm.addEventListener('submit', async (event) => {
     tokenStatus.textContent = error.message;
   }
 });
+aiConnectionBadge.addEventListener('click', () => {
+  enterIntroPage();
+});
 logoutButton.addEventListener('click', async () => {
   try {
     await removeSessionToken();
+    enterIntroPage();
+    tokenStatus.textContent = 'Logged out. Your session API key was removed from the server.';
   } catch (error) {
     setSessionNotice(error.message);
   }

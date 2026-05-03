@@ -147,6 +147,14 @@ body {
   padding: 0.35rem 0.65rem;
   font-size: 0.85rem;
   font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.ai-connection-badge:hover {
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .layout {
