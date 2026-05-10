@@ -57,3 +57,4 @@ nunit-*.xml
 # Node.js
 node_modules/
 coverage/
+dist/

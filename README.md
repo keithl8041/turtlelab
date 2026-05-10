@@ -11,6 +11,16 @@ npm start
 
 Open http://localhost:3000.
 
+## Development with hot reloading
+
+Start both the backend and the Vite dev server together with one command:
+
+```bash
+npm run dev
+```
+
+Open http://localhost:5173. Vite automatically reloads the browser whenever you save changes to `public/app.js`, `public/styles.css`, or `public/index.html`. API calls to `/api/*` are proxied to the backend running on port 3000.
+
 ## Application Insights
 
 Backend and frontend telemetry are instrumented through Azure Application Insights.
