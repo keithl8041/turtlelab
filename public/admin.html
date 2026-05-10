@@ -26,6 +26,20 @@
         <div id="admin-entry-list" class="admin-entry-list"></div>
       </section>
     </main>
+
+    <dialog id="admin-preview-modal" class="admin-preview-modal" aria-labelledby="admin-preview-title">
+      <form method="dialog" class="admin-preview-shell">
+        <header class="admin-preview-header">
+          <h2 id="admin-preview-title">Submission Preview</h2>
+          <button type="submit" id="admin-preview-close" class="secondary-button" aria-label="Close preview">Close</button>
+        </header>
+        <p id="admin-preview-meta" class="panel-subtitle"></p>
+        <p id="admin-preview-status" class="token-status" aria-live="polite"></p>
+        <div class="canvas-wrapper admin-preview-canvas-wrapper">
+          <canvas id="admin-preview-canvas" width="800" height="600" aria-label="Submission preview canvas"></canvas>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="/admin.js"></script>
   </body>
 </html>

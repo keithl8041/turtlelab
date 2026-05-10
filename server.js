@@ -48,6 +48,7 @@ const COMMUNITY_GALLERY_TABLE_SAS_URL = String(process.env.COMMUNITY_GALLERY_TAB
 const COMMUNITY_GALLERY_TABLE_PARTITION = String(process.env.COMMUNITY_GALLERY_TABLE_PARTITION || 'gallery').slice(0, 100);
 const COMMUNITY_GALLERY_CACHE_FILE = process.env.COMMUNITY_GALLERY_CACHE_FILE
   || path.join(IS_TEST_RUNTIME ? os.tmpdir() : __dirname, 'community-gallery-cache.json');
+const DEBUG_COMMUNITY_UPLOAD = String(process.env.DEBUG_COMMUNITY_UPLOAD || 'true').toLowerCase() !== 'false';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const AI_TAG_GENERATION_TEMPERATURE = 0.2;
 const PROVIDER_DEFAULTS = {
@@ -163,6 +164,17 @@ function sanitizeProperties(properties = {}) {
   return clean;
 }
 
+function debugCommunityUpload(stage, details = {}) {
+  if (!DEBUG_COMMUNITY_UPLOAD) {
+    return;
+  }
+  // eslint-disable-next-line no-console
+  console.info('[CommunityUpload][Debug]', {
+    stage,
+    ...sanitizeProperties(details)
+  });
+}
+
 function getOperationId(req) {
   const headerValue = String(req.headers['x-correlation-id'] || '').trim();
   if (headerValue && headerValue.length <= 120) {
@@ -172,23 +184,44 @@ function getOperationId(req) {
 }
 
 function trackEvent(name, properties = {}, measurements = {}) {
+  const cleanProperties = sanitizeProperties(properties);
+  // eslint-disable-next-line no-console
+  console.info('[Telemetry][Event]', {
+    name,
+    properties: cleanProperties,
+    measurements
+  });
+
   if (!telemetryClient) {
     return;
   }
   telemetryClient.trackEvent({
     name,
-    properties: sanitizeProperties(properties),
+    properties: cleanProperties,
     measurements
   });
 }
 
 function trackException(error, properties = {}) {
-  if (!telemetryClient || !error) {
+  if (!error) {
+    return;
+  }
+
+  const cleanProperties = sanitizeProperties(properties);
+  // eslint-disable-next-line no-console
+  console.error('[Telemetry][Exception]', {
+    name: truncateValue(error.name, 120),
+    message: truncateValue(error.message, 240),
+    stack: truncateValue(error.stack, 1200),
+    properties: cleanProperties
+  });
+
+  if (!telemetryClient) {
     return;
   }
   telemetryClient.trackException({
     exception: error,
-    properties: sanitizeProperties(properties)
+    properties: cleanProperties
   });
 }
 
@@ -480,9 +513,11 @@ function applyGalleryRows(rows) {
 }
 
 function deserializeTableEntity(entity) {
+  const rawStatus = trimTo(entity.status || 'pending', 30).toLowerCase();
+  const status = rawStatus === 'rejected' ? 'deleted' : rawStatus;
   return {
     id: trimTo(entity.RowKey, 120),
-    status: trimTo(entity.status || 'pending', 30) || 'pending',
+    status: status || 'pending',
     name: trimTo(entity.name, 120),
     email: trimTo(entity.email, 200).toLowerCase(),
     prompt: trimTo(entity.prompt, 400),
@@ -554,6 +589,10 @@ async function loadGalleryCache() {
 }
 
 async function persistGalleryEntry(entry) {
+  debugCommunityUpload('persist:start', {
+    submissionId: entry.id,
+    hasTableSas: String(Boolean(COMMUNITY_GALLERY_TABLE_SAS_URL))
+  });
   communityGalleryStore.set(entry.id, entry);
   writeGalleryCacheFile();
 
@@ -568,8 +607,18 @@ async function persistGalleryEntry(entry) {
     body: JSON.stringify(entity)
   });
   if (!response.ok) {
-    throw new Error('Could not persist gallery submission.');
+    const responseText = truncateValue(await response.text().catch(() => ''), 800);
+    debugCommunityUpload('persist:table_failed', {
+      submissionId: entry.id,
+      status: String(response.status),
+      statusText: response.statusText,
+      responseText
+    });
+    throw new Error(`Could not persist gallery submission. Table status ${response.status} ${response.statusText}. ${responseText}`.trim());
   }
+  debugCommunityUpload('persist:done', {
+    submissionId: entry.id
+  });
 }
 
 async function mergeGalleryEntry(entry) {
@@ -608,6 +657,9 @@ function adminPasswordValid(req) {
 
 async function notifyAdminSubmission(entry) {
   if (!ADMIN_NOTIFICATION_WEBHOOK_URL) {
+    debugCommunityUpload('notify:skipped_no_webhook', {
+      submissionId: entry.id
+    });
     return false;
   }
 
@@ -627,8 +679,18 @@ async function notifyAdminSubmission(entry) {
   });
 
   if (!response.ok) {
-    throw new Error('Failed to send admin notification.');
+    const responseText = truncateValue(await response.text().catch(() => ''), 800);
+    debugCommunityUpload('notify:failed', {
+      submissionId: entry.id,
+      status: String(response.status),
+      statusText: response.statusText,
+      responseText
+    });
+    throw new Error(`Failed to send admin notification. Status ${response.status} ${response.statusText}. ${responseText}`.trim());
   }
+  debugCommunityUpload('notify:done', {
+    submissionId: entry.id
+  });
   return true;
 }
 
@@ -1096,7 +1158,7 @@ function handleGenerate(req, res, sessionContext) {
         workflowHint: 'Suggest → Review → Edit: the AI guessed first, now try fixing the code to improve the drawing.',
         transparencyNote: aiUsed
           ? 'The AI turned your words into turtle code. You can check and change its code below.'
-          : 'This is a sample drawing. Add your own API token in the splash screen (optional).'
+          : 'This is a sample drawing.'
       }, sessionContext.responseHeaders);
     })
     .catch((error) => {
@@ -1248,6 +1310,10 @@ function handleGalleryList(res, sessionContext) {
 function handleGallerySubmission(req, res, sessionContext) {
   readJson(req)
     .then(async (body) => {
+      debugCommunityUpload('request:received', {
+        operationId: sessionContext.operationId,
+        sessionIdHash: crypto.createHash('sha256').update(sessionContext.sessionId).digest('hex').slice(0, 16)
+      });
       await loadGalleryCache();
       const name = trimTo(body.name, 120);
       const email = trimTo(body.email, 200).toLowerCase();
@@ -1257,7 +1323,23 @@ function handleGallerySubmission(req, res, sessionContext) {
       const description = trimTo(body.metadata?.description, 500);
       const explanation = trimTo(body.metadata?.explanation, 700);
 
+      debugCommunityUpload('request:parsed', {
+        operationId: sessionContext.operationId,
+        nameLength: String(name.length),
+        emailDomain: email.includes('@') ? email.split('@')[1] : 'invalid',
+        promptLength: String(prompt.length),
+        codeLength: String(code.length),
+        hasMetadata: String(Boolean(body.metadata))
+      });
+
       if (!name || !isValidEmail(email) || !prompt || !code) {
+        debugCommunityUpload('request:validation_failed', {
+          operationId: sessionContext.operationId,
+          hasName: String(Boolean(name)),
+          validEmail: String(Boolean(isValidEmail(email))),
+          hasPrompt: String(Boolean(prompt)),
+          hasCode: String(Boolean(code))
+        });
         jsonResponse(res, 400, {
           error: 'Please provide name, valid email, prompt, and code.'
         }, sessionContext.responseHeaders);
@@ -1280,14 +1362,31 @@ function handleGallerySubmission(req, res, sessionContext) {
         reviewedAt: null
       };
 
+      debugCommunityUpload('request:entry_created', {
+        operationId: sessionContext.operationId,
+        submissionId: entry.id,
+        status: entry.status
+      });
+
       await persistGalleryEntry(entry);
       let adminNotified = false;
       let notificationError = '';
       try {
         adminNotified = await notifyAdminSubmission(entry);
-      } catch {
+      } catch (error) {
+        debugCommunityUpload('notify:error', {
+          operationId: sessionContext.operationId,
+          submissionId: entry.id,
+          error: error.message || 'unknown'
+        });
         notificationError = 'Submission saved, but notification delivery failed.';
       }
+
+      debugCommunityUpload('request:success', {
+        operationId: sessionContext.operationId,
+        submissionId: entry.id,
+        adminNotified: String(adminNotified)
+      });
 
       jsonResponse(res, 201, {
         ok: true,
@@ -1298,6 +1397,11 @@ function handleGallerySubmission(req, res, sessionContext) {
       }, sessionContext.responseHeaders);
     })
     .catch((error) => {
+      debugCommunityUpload('request:error', {
+        operationId: sessionContext.operationId,
+        error: error.message || 'unknown',
+        stack: truncateValue(error.stack, 1200)
+      });
       jsonResponse(res, 400, { error: error.message || 'Could not save submission.' }, sessionContext.responseHeaders);
     });
 }
@@ -1310,7 +1414,9 @@ function handleAdminList(req, res, sessionContext) {
   loadGalleryCache()
     .then(() => {
       jsonResponse(res, 200, {
-        items: galleryEntriesSorted().map(buildAdminGalleryEntry)
+        items: galleryEntriesSorted()
+          .filter((entry) => entry.status !== 'deleted' && entry.status !== 'rejected')
+          .map(buildAdminGalleryEntry)
       }, sessionContext.responseHeaders);
     })
     .catch((error) => {
@@ -1328,7 +1434,7 @@ function handleAdminDecision(req, res, sessionContext, entryId) {
     .then(async (body) => {
       await loadGalleryCache();
       const decision = trimTo(body.decision || body.status, 20).toLowerCase();
-      if (decision !== 'accept' && decision !== 'reject' && decision !== 'accepted' && decision !== 'rejected') {
+      if (decision !== 'accept' && decision !== 'reject' && decision !== 'accepted' && decision !== 'rejected' && decision !== 'delete' && decision !== 'deleted') {
         jsonResponse(res, 400, { error: 'Decision must be accept or reject.' }, sessionContext.responseHeaders);
         return;
       }
@@ -1339,7 +1445,7 @@ function handleAdminDecision(req, res, sessionContext, entryId) {
         return;
       }
 
-      target.status = decision.startsWith('accept') ? 'accepted' : 'rejected';
+      target.status = decision.startsWith('accept') ? 'accepted' : 'deleted';
       if (target.status === 'accepted') {
         target.tags = await generateTagsForEntry(target, sessionContext);
       } else {

@@ -773,9 +773,18 @@ async function submitCommunityDrawing(event) {
     throw new Error(body.error || 'Could not submit drawing.');
   }
 
-  const notice = `Submitted! Reference ID: ${body.id}${body.adminNotified ? '' : '. Waiting for admin notification setup.'}`;
+  // Clear and hide the form after success to prevent duplicate submissions in the same session.
+  communitySubmitForm.reset();
+  communityName.value = '';
+  communityEmail.value = '';
+  communitySubmitForm.hidden = true;
+  const notice = `Thanks for your submission. Your drawing is now in review, and we will email you with the outcome.${body.id ? ` Reference ID: ${body.id}.` : ''}`;
   communitySubmitStatus.textContent = notice;
-  await refreshCommunityGallery();
+  try {
+    await refreshCommunityGallery();
+  } catch {
+    // Keep success state visible even if gallery refresh fails.
+  }
 }
 
 function openPromptModal() {
@@ -909,7 +918,7 @@ function setTokenStatusUi(status) {
     const modelText = status.model ? ` using model ${status.model}.` : ' with the app default model.';
     tokenStatus.textContent = `Using ${status.provider} API key in this session${modelText}`;
   } else if (status.serverFallbackAvailable) {
-    tokenStatus.textContent = 'No personal API key set. The app can still use a server default key.';
+    tokenStatus.textContent = '';
   } else {
     tokenStatus.textContent = 'No API key set. You can still use saved examples or edit code manually.';
   }
