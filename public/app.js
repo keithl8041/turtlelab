@@ -306,6 +306,12 @@ async function showExplainResult({ title, description, explanation, note, review
   await animateTextTyping(explainTitleEl, title || '', 25);
   await animateTextTyping(explainDescriptionEl, description || '', 15);
   await animateTextTyping(aiOverview, explanation || '', 8);
+
+    // Hide empty elements
+    updateElementVisibility(transparencyNote);
+    updateElementVisibility(explainTitleEl);
+    updateElementVisibility(explainDescriptionEl);
+    updateElementVisibility(aiOverview);
 }
 
 function showExplainError(message) {
@@ -341,6 +347,11 @@ function animateTextTyping(element, text, speed = 30) {
     type();
   });
 }
+
+  function updateElementVisibility(element) {
+    const hasContent = element.textContent?.trim().length > 0;
+    element.hidden = !hasContent;
+  }
 
 function switchToTab(tabName) {
   const allButtons = [explainTabButton, savedTabButton, debugTabButton];
@@ -565,6 +576,8 @@ function setWarnings(warnings) {
     item.textContent = warning;
     warningsList.append(item);
   }
+
+  updateElementVisibility(warningsList);
 }
 
 function setSuggestions(suggestions) {
@@ -593,6 +606,12 @@ function applySavedProject(project) {
   explainError.hidden = true;
   explainResult.hidden = false;
   syncHighlight();
+
+  // Hide empty elements
+  updateElementVisibility(transparencyNote);
+  updateElementVisibility(explainTitleEl);
+  updateElementVisibility(explainDescriptionEl);
+  updateElementVisibility(aiOverview);
 }
 
 function loadDraftProject() {
@@ -724,6 +743,7 @@ function setProviderHelpLink(provider) {
 function setSessionNotice(message = '', link = '') {
   sessionNotice.innerHTML = '';
   if (!message) {
+    updateElementVisibility(sessionNotice);
     return;
   }
 
@@ -737,6 +757,8 @@ function setSessionNotice(message = '', link = '') {
     anchor.textContent = 'Manage provider keys';
     sessionNotice.append(anchor);
   }
+
+  updateElementVisibility(sessionNotice);
 }
 
 function setTokenStatusUi(status) {
@@ -1462,6 +1484,8 @@ async function runEditedCode() {
 
     renderProgram(payload.program, state.currentPlan, animateToggle.checked);
     saveDraftProject();
+
+      updateElementVisibility(aiOverview);
   } catch (error) {
     emitClientTelemetry('validate_exception', {
       message: normalizeErrorMessage(error)

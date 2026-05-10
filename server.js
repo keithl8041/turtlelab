@@ -370,7 +370,7 @@ async function commandsForPrompt(prompt, sessionId, operationId = 'none') {
       reason: 'no_token_available'
     });
     // eslint-disable-next-line no-console
-    console.warn('[AI] No session token or AI_API_KEY available — falling back to default commands.');
+    console.warn('[AI] No session token or AI_API_KEY available — returning an empty command set.');
     return { commands: FALLBACK_COMMANDS, aiUsed: false };
   }
 
