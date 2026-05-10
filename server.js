@@ -49,6 +49,7 @@ const COMMUNITY_GALLERY_TABLE_PARTITION = String(process.env.COMMUNITY_GALLERY_T
 const COMMUNITY_GALLERY_CACHE_FILE = process.env.COMMUNITY_GALLERY_CACHE_FILE
   || path.join(IS_TEST_RUNTIME ? os.tmpdir() : __dirname, 'community-gallery-cache.json');
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const AI_TAG_GENERATION_TEMPERATURE = 0.2;
 const PROVIDER_DEFAULTS = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
@@ -350,7 +351,7 @@ function normalizeTag(tag) {
 
 function fallbackTagsForEntry(entry) {
   const haystack = `${entry.title} ${entry.description} ${entry.prompt}`.toLowerCase();
-  const seed = [];
+  const matchedTags = [];
   const keywordTags = [
     ['robot', 'robot'],
     ['house', 'house'],
@@ -374,15 +375,15 @@ function fallbackTagsForEntry(entry) {
 
   for (const [keyword, tag] of keywordTags) {
     if (haystack.includes(keyword)) {
-      seed.push(tag);
+      matchedTags.push(tag);
     }
   }
 
-  if (seed.length === 0) {
-    seed.push('drawing');
+  if (matchedTags.length === 0) {
+    matchedTags.push('drawing');
   }
 
-  return Array.from(new Set(seed.map(normalizeTag).filter(Boolean))).slice(0, 6);
+  return Array.from(new Set(matchedTags.map(normalizeTag).filter(Boolean))).slice(0, 6);
 }
 
 function parseMaybeJson(value, fallback) {
@@ -436,6 +437,14 @@ function tableSasUrl(pathSuffix = '', extraQuery = {}) {
     target.searchParams.set(key, value);
   }
   return target.toString();
+}
+
+function escapeODataStringLiteral(value) {
+  return String(value || '').replace(/'/g, "''");
+}
+
+function tableEntityPath(partitionKey, rowKey) {
+  return `(PartitionKey='${encodeURIComponent(String(partitionKey || ''))}',RowKey='${encodeURIComponent(String(rowKey || ''))}')`;
 }
 
 function tableHeaders(contentType = 'application/json') {
@@ -513,7 +522,7 @@ async function loadGalleryCache() {
   if (COMMUNITY_GALLERY_TABLE_SAS_URL) {
     try {
       const url = tableSasUrl('', {
-        $filter: `PartitionKey eq '${COMMUNITY_GALLERY_TABLE_PARTITION}'`
+        $filter: `PartitionKey eq '${escapeODataStringLiteral(COMMUNITY_GALLERY_TABLE_PARTITION)}'`
       });
       const response = await fetch(url, { headers: tableHeaders() });
       if (response.ok) {
@@ -571,7 +580,7 @@ async function mergeGalleryEntry(entry) {
     return;
   }
 
-  const response = await fetch(tableSasUrl(`(PartitionKey='${COMMUNITY_GALLERY_TABLE_PARTITION.replace(/'/g, "''")}',RowKey='${entry.id.replace(/'/g, "''")}')`), {
+  const response = await fetch(tableSasUrl(tableEntityPath(COMMUNITY_GALLERY_TABLE_PARTITION, entry.id)), {
     method: 'PUT',
     headers: {
       ...tableHeaders(),
@@ -639,7 +648,7 @@ async function generateTagsForEntry(entry, sessionContext) {
       },
       body: JSON.stringify({
         model: aiConfig.model,
-        temperature: 0.2,
+        temperature: AI_TAG_GENERATION_TEMPERATURE,
         messages: [
           {
             role: 'system',

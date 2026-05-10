@@ -757,9 +757,7 @@ async function submitCommunityDrawing(event) {
     throw new Error(body.error || 'Could not submit drawing.');
   }
 
-  const notice = body.adminNotified
-    ? `Submitted! Reference ID: ${body.id}`
-    : `Submitted! Reference ID: ${body.id}. Waiting for admin notification setup.`;
+  const notice = `Submitted! Reference ID: ${body.id}${body.adminNotified ? '' : '. Waiting for admin notification setup.'}`;
   communitySubmitStatus.textContent = notice;
   await refreshCommunityGallery();
 }
