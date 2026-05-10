@@ -622,6 +622,7 @@ function handleTokenStatus(res, sessionContext) {
     hasToken: Boolean(tokenEntry),
     provider: tokenEntry?.provider || null,
     baseUrl: tokenEntry?.baseUrl || null,
+    model: tokenEntry?.model || null,
     serverFallbackAvailable: Boolean(AI_API_KEY)
   }, sessionContext.responseHeaders);
 }
@@ -632,19 +633,20 @@ function handleSetToken(req, res, sessionContext) {
       const provider = normalizeProvider(body.provider);
       const defaults = providerDefaults(provider);
       const token = trimTo(body.token, 500);
+      const requestedModel = trimTo(body.model, 120);
 
-      if (!token) {
-        jsonResponse(res, 400, {
-          error: 'Please provide an API token.'
-        }, sessionContext.responseHeaders);
-        return;
-      }
+      // if (!token) {
+      //   jsonResponse(res, 400, {
+      //     error: 'Please provide an API token.'
+      //   }, sessionContext.responseHeaders);
+      //   return;
+      // }
 
       sessionTokenStore.set(sessionContext.sessionId, {
         provider,
         token,
         baseUrl: normalizeBaseUrl(body.baseUrl, defaults.baseUrl),
-        model: defaults.model,
+        model: requestedModel || defaults.model,
         updatedAt: Date.now()
       });
 
@@ -658,7 +660,8 @@ function handleSetToken(req, res, sessionContext) {
       jsonResponse(res, 200, {
         ok: true,
         hasToken: true,
-        provider
+        provider,
+        model: requestedModel || defaults.model
       }, sessionContext.responseHeaders);
     })
     .catch((error) => {
