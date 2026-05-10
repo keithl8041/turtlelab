@@ -256,7 +256,8 @@ const state = {
   animationRaf: null,
   isGenerating: false,
   typingAnimation: null,
-  lintErrorLines: new Set()
+  lintErrorLines: new Set(),
+  activeExecutionLine: null
 };
 
 function addDebugLogEntry(message, type = 'info', data = null) {
@@ -535,12 +536,18 @@ function syncHighlight() {
     const lineNumber = index + 1;
     const escapedLine = escapeHtml(line);
     const isErrorLine = state.lintErrorLines.has(lineNumber);
+    const isActiveLine = state.activeExecutionLine === lineNumber;
 
-    if (/^\s*#/.test(line)) {
-      const content = `<span class="code-comment">${escapedLine}</span>`;
-      return isErrorLine ? `<span class="code-error-line">${content}</span>` : content;
+    let content = /^\s*#/.test(line)
+      ? `<span class="code-comment">${escapedLine}</span>`
+      : escapedLine;
+
+    if (isActiveLine) {
+      content = `<span class="code-active-line">${content}</span>`;
+    } else if (isErrorLine) {
+      content = `<span class="code-error-line">${content}</span>`;
     }
-    return isErrorLine ? `<span class="code-error-line">${escapedLine}</span>` : escapedLine;
+    return content;
   }).join('\n');
   codeHighlight.innerHTML = html;
 }
@@ -1313,6 +1320,10 @@ function stopAnimation() {
     cancelAnimationFrame(state.animationRaf);
     state.animationRaf = null;
   }
+  if (state.activeExecutionLine !== null) {
+    state.activeExecutionLine = null;
+    syncHighlight();
+  }
 }
 
 function renderProgram(program, executionPlan = [], animate = true) {
@@ -1351,7 +1362,10 @@ function renderProgram(program, executionPlan = [], animate = true) {
   const step = () => {
     const command = executionPlan[index];
     if (!command) {
-      // Drawing is complete, make the turtle disappear in a puff of smoke
+      // Drawing is complete — clear the active-line highlight
+      state.activeExecutionLine = null;
+      syncHighlight();
+      // Make the turtle disappear in a puff of smoke
       if (index > 0) {
         smokePuffAndVanish(toCanvasX(turtle.x), toCanvasY(turtle.y), () => {
           // Animation complete, nothing more to do
@@ -1365,6 +1379,11 @@ function renderProgram(program, executionPlan = [], animate = true) {
     const prevHeading = turtle.heading;
 
     runSingleCommand(command, turtle);
+    // Update the overlay to show which line is currently executing
+    if (command.line !== null) {
+      state.activeExecutionLine = command.line;
+      syncHighlight();
+    }
     highlightLine(command.line);
     index += 1;
 

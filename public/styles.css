@@ -428,13 +428,22 @@ button:disabled {
   line-height: 1.45;
 }
 
-.code-error-line {
+.code-error-line,
+.code-active-line {
   display: block;
-  background: rgba(239, 68, 68, 0.13);
   border-radius: 2px;
-  outline: 1px solid rgba(239, 68, 68, 0.3);
   margin: 0 -0.75rem;
   padding: 0 0.75rem;
+}
+
+.code-error-line {
+  background: rgba(239, 68, 68, 0.13);
+  outline: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.code-active-line {
+  background: rgba(234, 179, 8, 0.2);
+  outline: 1px solid rgba(234, 179, 8, 0.5);
 }
 
 .ai-overview {
