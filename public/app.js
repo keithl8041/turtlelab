@@ -263,6 +263,7 @@ const communityEmail = document.querySelector('#community-email');
 const communitySubmitStatus = document.querySelector('#community-submit-status');
 const communityGalleryList = document.querySelector('#community-gallery-list');
 const communityRefreshButton = document.querySelector('#community-refresh-button');
+const COMMUNITY_GALLERY_PAGE_SIZE = 9;
 
 const ctx = canvas.getContext('2d');
 const spriteCanvas = document.querySelector('#turtle-sprite-canvas');
@@ -285,7 +286,9 @@ const state = {
   activeExecutionLine: null,
   tokenModalStep: 1,
   hasToken: false,
-  serverFallbackAvailable: false
+  serverFallbackAvailable: false,
+  communityGalleryItems: [],
+  communityGalleryPage: 0
 };
 
 function addDebugLogEntry(message, type = 'info', data = null) {
@@ -782,10 +785,35 @@ function saveToHistory() {
   renderSavedProjects();
 }
 
+function applyCommunityGalleryItem(item) {
+  cancelTypingAnimation();
+  promptInput.value = item.prompt || '';
+  codeEditor.value = item.code || '';
+  animateToggle.checked = true;
+  state.aiCode = item.code || '';
+  explainTitleEl.textContent = item.title || 'Community drawing';
+  explainDescriptionEl.textContent = item.description || '';
+  aiOverview.textContent = item.explanation || '';
+  transparencyNote.textContent = 'Loaded from the community gallery.';
+  reviewHint.textContent = 'Edit it, then press Run again to make it your own.';
+  setWarnings([]);
+  setSuggestions([]);
+  explainLoading.hidden = true;
+  explainError.hidden = true;
+  explainResult.hidden = false;
+  syncHighlight();
+  updateElementVisibility(transparencyNote);
+  updateElementVisibility(explainTitleEl);
+  updateElementVisibility(explainDescriptionEl);
+  updateElementVisibility(aiOverview);
+}
+
 function renderCommunityGallery(items = []) {
   communityGalleryList.innerHTML = '';
+  state.communityGalleryItems = Array.isArray(items) ? items : [];
 
-  if (!Array.isArray(items) || items.length === 0) {
+  if (state.communityGalleryItems.length === 0) {
+    state.communityGalleryPage = 0;
     const empty = document.createElement('p');
     empty.className = 'panel-subtitle';
     empty.textContent = 'No approved community drawings yet.';
@@ -793,7 +821,70 @@ function renderCommunityGallery(items = []) {
     return;
   }
 
-  for (const item of items) {
+  const totalPages = Math.max(1, Math.ceil(state.communityGalleryItems.length / COMMUNITY_GALLERY_PAGE_SIZE));
+  state.communityGalleryPage = Math.min(state.communityGalleryPage, totalPages - 1);
+  const startIndex = state.communityGalleryPage * COMMUNITY_GALLERY_PAGE_SIZE;
+  const visibleItems = state.communityGalleryItems.slice(startIndex, startIndex + COMMUNITY_GALLERY_PAGE_SIZE);
+
+  const header = document.createElement('div');
+  header.className = 'community-gallery-header';
+  const heading = document.createElement('p');
+  heading.className = 'community-gallery-summary';
+  heading.textContent = `Showing ${startIndex + 1}-${startIndex + visibleItems.length} of ${state.communityGalleryItems.length} drawings`;
+  header.append(heading);
+
+  const pager = document.createElement('div');
+  pager.className = 'community-gallery-pager';
+
+  const previousButton = document.createElement('button');
+  previousButton.type = 'button';
+  previousButton.className = 'secondary-button';
+  previousButton.textContent = 'Previous';
+  previousButton.disabled = state.communityGalleryPage === 0;
+  previousButton.addEventListener('click', () => {
+    if (state.communityGalleryPage === 0) {
+      return;
+    }
+    state.communityGalleryPage -= 1;
+    renderCommunityGallery(state.communityGalleryItems);
+  });
+  pager.append(previousButton);
+
+  for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
+    const pageButton = document.createElement('button');
+    pageButton.type = 'button';
+    pageButton.className = pageIndex === state.communityGalleryPage ? 'page-button is-active' : 'page-button';
+    pageButton.textContent = String(pageIndex + 1);
+    pageButton.setAttribute('aria-label', `Go to page ${pageIndex + 1}`);
+    pageButton.setAttribute('aria-current', pageIndex === state.communityGalleryPage ? 'page' : 'false');
+    pageButton.addEventListener('click', () => {
+      state.communityGalleryPage = pageIndex;
+      renderCommunityGallery(state.communityGalleryItems);
+    });
+    pager.append(pageButton);
+  }
+
+  const nextButton = document.createElement('button');
+  nextButton.type = 'button';
+  nextButton.className = 'secondary-button';
+  nextButton.textContent = 'Next';
+  nextButton.disabled = state.communityGalleryPage >= totalPages - 1;
+  nextButton.addEventListener('click', () => {
+    if (state.communityGalleryPage >= totalPages - 1) {
+      return;
+    }
+    state.communityGalleryPage += 1;
+    renderCommunityGallery(state.communityGalleryItems);
+  });
+  pager.append(nextButton);
+
+  header.append(pager);
+  communityGalleryList.append(header);
+
+  const grid = document.createElement('div');
+  grid.className = 'community-gallery-grid';
+
+  for (const item of visibleItems) {
     const card = document.createElement('article');
     card.className = 'community-card';
     const tags = Array.isArray(item.tags) && item.tags.length > 0
@@ -801,19 +892,35 @@ function renderCommunityGallery(items = []) {
       : '';
 
     card.innerHTML = `
-      <h3>${escapeHtml(item.title || 'Community drawing')}</h3>
-      <p class="panel-subtitle">${escapeHtml(item.description || '')}</p>
-      <p>${escapeHtml(item.explanation || '')}</p>
-      <p><strong>By:</strong> ${escapeHtml(item.name || 'Anonymous')}</p>
-      <p><strong>Prompt:</strong> ${escapeHtml(item.prompt || '')}</p>
+      <div class="community-card-body">
+        <h3>${escapeHtml(item.title || 'Community drawing')}</h3>
+        <p class="panel-subtitle community-description">${escapeHtml(item.description || '')}</p>
+        <p class="community-explanation">${escapeHtml(item.explanation || '')}</p>
+        <p class="community-meta"><strong>By:</strong> ${escapeHtml(item.name || 'Anonymous')}</p>
+        <p class="community-meta"><strong>Prompt:</strong> ${escapeHtml(item.prompt || '')}</p>
+      </div>
+      <div class="community-card-actions">
+        <button type="button" class="community-play-button">Play</button>
+      </div>
       ${tags}
       <details>
         <summary>View code</summary>
         <pre>${escapeHtml(item.code || '')}</pre>
       </details>
     `;
-    communityGalleryList.append(card);
+
+    const playButton = card.querySelector('.community-play-button');
+    playButton.addEventListener('click', () => {
+      applyCommunityGalleryItem(item);
+      runEditedCode();
+      codeEditor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      codeEditor.focus();
+    });
+
+    grid.append(card);
   }
+
+  communityGalleryList.append(grid);
 }
 
 async function refreshCommunityGallery() {
