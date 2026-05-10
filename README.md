@@ -1,6 +1,8 @@
-# turtlelab
+# Turtle Flow AI
 
 A kid-friendly AI turtle playground that turns natural language prompts into safe turtle DSL code, renders the result on canvas, and explains how the code works.
+
+Production site: https://turtleflow.ai
 
 ## Run locally
 

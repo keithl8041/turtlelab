@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TurtleLab — AI Turtle Playground</title>
+    <title>Turtle Flow AI — AI Turtle Playground</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -11,9 +11,7 @@
     <section id="intro-page" class="intro-page" aria-labelledby="intro-title">
       <div class="intro-grid">
         <div class="intro-copy">
-          <p class="intro-eyebrow">AI turtle playground</p>
           <img src="/logo.png" alt="Turtle Flow AI logo" class="intro-logo" />
-          <h1 id="intro-title">Turtle Flow AI</h1>
           <p class="intro-lead">
             Turtle Flow AI turns plain-English drawing ideas into safe turtle code, animates the result on the canvas,
             and explains what the program is doing so you can inspect it, learn from it, and improve it.
@@ -23,36 +21,74 @@
             replay the turtle path, and save versions you want to keep. If you want live AI generation through your own
             provider account, you can add a session-only API key here before entering the studio.
           </p>
-          <div class="button-row intro-actions">
+          <!-- <div class="button-row intro-actions">
             <button id="intro-start-button" type="button">Start Drawing</button>
-          </div>
+          </div> -->
         </div>
 
         <section class="panel intro-setup" aria-labelledby="setup-title">
-          <h2 id="setup-title">Optional AI setup</h2>
-          <p class="panel-subtitle">Bring your own API key if you want the app to use your provider account. Keys stay only in server memory for this session.</p>
-          <form id="token-form" class="token-form">
-            <label for="token-provider">Provider</label>
-            <select id="token-provider">
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic (compatible endpoint)</option>
-              <option value="gemini">Gemini (compatible endpoint)</option>
-              <option value="custom">Custom compatible API</option>
-            </select>
-            <a id="get-token-link" class="token-link" href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Get an API key</a>
-            <label for="token-input">API key</label>
-            <input id="token-input" type="password" autocomplete="off" placeholder="Paste API key (optional)" />
-            <label for="token-base-url">Base URL (optional)</label>
-            <input id="token-base-url" type="url" autocomplete="off" placeholder="https://api.openai.com/v1" />
-            <div class="button-row">
-              <button id="save-token-button" type="submit">Use My API Key</button>
-              <button id="skip-splash-button" type="button" class="secondary-button">Continue Without Key</button>
-            </div>
-            <p id="token-status" class="token-status" aria-live="polite"></p>
-          </form>
+          <h2 id="setup-title">AI setup</h2>
+          <p class="panel-subtitle">Bring your own API key if you want the app to use your provider account. Keys stay only in server memory for this session. Only limited functionality is available without an API key. </p>
+          <div class="ai-setup-launch">
+            <button id="open-token-modal-button" type="button">Set Up AI Provider</button>
+            <button id="skip-splash-button" type="button" class="secondary-button">Continue Without Key</button>
+          </div>
+          <p id="token-status" class="token-status" aria-live="polite"></p>
         </section>
       </div>
     </section>
+
+    <dialog id="token-modal" class="prompt-modal token-modal" aria-labelledby="token-modal-title">
+      <form id="token-form" class="prompt-form token-form" method="dialog">
+        <div class="prompt-header">
+          <div>
+            <h2 id="token-modal-title">AI setup</h2>
+            <p class="panel-subtitle token-step-caption"><span id="token-step-label">Step 1 of 2</span> <span id="token-step-title">Choose a provider</span></p>
+          </div>
+          <button id="close-token-modal-button" type="button" class="secondary-button">Close</button>
+        </div>
+
+        <div class="token-steps" aria-hidden="true">
+          <span id="token-step-indicator-1" class="token-step-indicator active">1</span>
+          <span id="token-step-indicator-2" class="token-step-indicator">2</span>
+        </div>
+
+        <section id="token-step-1" class="token-step" aria-labelledby="token-step-1-heading">
+          <h3 id="token-step-1-heading">Step 1</h3>
+          <label for="token-provider">Provider</label>
+          <select id="token-provider">
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="gemini">Gemini (Google)</option>
+            <option value="custom">Custom compatible API</option>
+          </select>
+          <p class="token-step-help">Pick the provider you want Turtle Flow AI to use for this session.</p>
+          <div class="button-row token-step-actions">
+            <button id="token-next-button" type="button">Continue</button>
+          </div>
+        </section>
+
+        <section id="token-step-2" class="token-step" aria-labelledby="token-step-2-heading" hidden>
+          <h3 id="token-step-2-heading">Step 2</h3>
+          <p class="token-step-help">Get an API key for <strong id="token-provider-summary">OpenAI</strong>, then paste it below.</p>
+          <a id="get-token-link" class="token-link" href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Get an API key</a>
+          <label for="token-input">API key</label>
+          <input id="token-input" type="password" autocomplete="off" placeholder="Paste API key" />
+          <div id="token-model-field" class="token-field" hidden>
+            <label for="token-model">Model</label>
+            <input id="token-model" type="text" autocomplete="off" placeholder="Enter your model name" />
+          </div>
+          <div id="token-base-url-field" class="token-field" hidden>
+            <label for="token-base-url">Base URL</label>
+            <input id="token-base-url" type="url" autocomplete="off" placeholder="https://your-compatible-api.example/v1" />
+          </div>
+          <div class="button-row token-step-actions">
+            <button id="token-back-button" type="button" class="secondary-button">Back</button>
+            <button id="save-token-button" type="submit">Use My API Key</button>
+          </div>
+        </section>
+      </form>
+    </dialog>
 
     <div id="studio" hidden>
       <header class="topbar">
@@ -195,7 +231,7 @@
     <footer class="credit-footer">
       <span>
         made with ❤️ by Felix, Jasper and Keith -
-        <a href="https://github.com/keithl8041/turtlelab" target="_blank" rel="noreferrer">github.com/keithl8041/turtlelab</a>
+        <a href="https://turtleflow.ai" target="_blank" rel="noreferrer">turtleflow.ai</a>
       </span>
     </footer>
   </body>
