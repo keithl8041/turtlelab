@@ -112,7 +112,6 @@ Before you write a single command, sketch the full drawing in your head:
 \`\`\`
 
 ## Drawing rules
-- **Always start with:** penup → home → pendown.
 - **Walk, don't jump.** Use forward/backward/left/right for all drawing. Use repeat to build polygons, stars, spirals. Use goto (wrapped in penup/pendown) only to reposition between separate parts.
 - **Keep it together.** Position shapes so they form one coherent scene — a house has walls, a roof above them, windows inside the walls. Use goto to reach deliberate start points; use setheading to set a consistent facing direction when starting a new part.
 - Keep total expanded command count under 500. Nest repeat at most 6 levels deep.

@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "concurrently --names \"backend,vite\" \"node server.js\" \"vite\"",
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "node --check server.js && node --check lib/turtle-program.js && vite build --mode development --logLevel error"
   },
   "repository": {
     "type": "git",

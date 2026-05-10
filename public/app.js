@@ -280,6 +280,7 @@ const state = {
   animationRaf: null,
   isGenerating: false,
   typingAnimation: null,
+  lintTimer: null,
   lintErrorLines: new Set(),
   activeExecutionLine: null,
   tokenModalStep: 1,
@@ -560,11 +561,12 @@ function escapeHtml(text) {
 
 function syncHighlight() {
   const lines = codeEditor.value.split('\n');
+  const activeLine = normalizeLineNumber(state.activeExecutionLine, lines.length);
   const html = lines.map((line, index) => {
     const lineNumber = index + 1;
     const escapedLine = escapeHtml(line);
     const isErrorLine = state.lintErrorLines.has(lineNumber);
-    const isActiveLine = state.activeExecutionLine === lineNumber;
+    const isActiveLine = activeLine === lineNumber;
 
     let content = /^\s*#/.test(line)
       ? `<span class="code-comment">${escapedLine}</span>`
@@ -583,9 +585,11 @@ function syncHighlight() {
 codeEditor.addEventListener('input', () => {
   clearLintErrors();
   syncHighlight();
+  scheduleInlineLint();
 });
 codeEditor.addEventListener('scroll', () => {
   codeHighlight.scrollTop = codeEditor.scrollTop;
+  codeHighlight.scrollLeft = codeEditor.scrollLeft;
 });
 
 function clearLintErrors() {
@@ -593,19 +597,47 @@ function clearLintErrors() {
   codeError.textContent = '';
 }
 
-function showLintError(error) {
+function showLintError(error, { reveal = true } = {}) {
+  const lines = codeEditor.value.split('\n');
+  const normalizedLine = normalizeLineNumber(error.line, lines.length);
   state.lintErrorLines.clear();
-  if (error.line) {
-    state.lintErrorLines.add(error.line);
+  if (normalizedLine) {
+    state.lintErrorLines.add(normalizedLine);
   }
   syncHighlight();
 
-  const prefix = error.line ? `Line ${error.line}: ` : '';
+  const prefix = normalizedLine ? `Line ${normalizedLine}: ` : '';
   codeError.textContent = `🐢 Oops! ${prefix}${error.message}`;
 
-  if (error.line) {
-    highlightLine(error.line);
+  if (normalizedLine && reveal) {
+    highlightLine(normalizedLine);
   }
+}
+
+function scheduleInlineLint() {
+  if (state.lintTimer) {
+    clearTimeout(state.lintTimer);
+  }
+
+  state.lintTimer = setTimeout(() => {
+    state.lintTimer = null;
+
+    if (!codeEditor.value.trim()) {
+      clearLintErrors();
+      syncHighlight();
+      return;
+    }
+
+    const result = parseDisplayCode(codeEditor.value);
+    if (!result.valid) {
+      const firstError = result.errors?.[0] || { message: 'That code has a small mistake.' };
+      showLintError(firstError, { reveal: false });
+      return;
+    }
+
+    clearLintErrors();
+    syncHighlight();
+  }, 180);
 }
 
 function getSavedHistory() {
@@ -1170,14 +1202,16 @@ function toCanvasY(y) {
 }
 
 function highlightLine(lineNumber) {
-  if (!lineNumber || lineNumber < 1) {
+  const lines = codeEditor.value.split('\n');
+  const normalizedLine = normalizeLineNumber(lineNumber, lines.length);
+  if (!normalizedLine) {
     return;
   }
 
   const computed = getComputedStyle(codeEditor);
   const parsedLineHeight = parseFloat(computed.lineHeight);
   const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : 20;
-  const lineIndex = lineNumber - 1;
+  const lineIndex = normalizedLine - 1;
   const lineTop = lineIndex * lineHeight;
   const lineBottom = lineTop + lineHeight;
 
@@ -1195,14 +1229,36 @@ function highlightLine(lineNumber) {
     codeEditor.scrollTo({ top: targetTop, behavior: 'smooth' });
   }
 
-  const lines = codeEditor.value.split('\n');
   let start = 0;
-  for (let i = 0; i < lineNumber - 1 && i < lines.length; i += 1) {
+  for (let i = 0; i < normalizedLine - 1 && i < lines.length; i += 1) {
     start += lines[i].length + 1;
   }
-  const end = start + (lines[lineNumber - 1] || '').length;
+  const end = start + (lines[normalizedLine - 1] || '').length;
   codeEditor.focus();
   codeEditor.setSelectionRange(start, end);
+}
+
+function normalizeLineNumber(lineNumber, totalLines) {
+  const parsed = Number(lineNumber);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const line = Math.trunc(parsed);
+  if (line >= 1 && line <= totalLines) {
+    return line;
+  }
+
+  // Some sources may report 0-based line numbers.
+  if (line >= 0 && (line + 1) <= totalLines) {
+    return line + 1;
+  }
+
+  if (line < 1 || totalLines < 1) {
+    return null;
+  }
+
+  return Math.min(line, totalLines);
 }
 
 function drawTurtleSprite(tCtx, cx, cy, heading) {
@@ -1874,7 +1930,9 @@ closePromptButton.addEventListener('click', closePromptModal);
 promptForm.addEventListener('submit', generateFromPrompt);
 runButton.addEventListener('click', runEditedCode);
 restoreButton.addEventListener('click', restoreAiCode);
-copyButton.addEventListener('click', copyCode);
+if (copyButton) {
+  copyButton.addEventListener('click', copyCode);
+}
 saveProjectButton.addEventListener('click', () => {
   saveToHistory();
   saveDraftProject();
@@ -1912,14 +1970,20 @@ communityRefreshButton.addEventListener('click', () => {
   });
 });
 
-helpButton.addEventListener('click', openHelpModal);
-closeHelpButton.addEventListener('click', closeHelpModal);
-helpModal.addEventListener('click', (event) => {
-  // Close when clicking the backdrop (outside the inner content)
-  if (event.target === helpModal) {
-    closeHelpModal();
-  }
-});
+if (helpButton) {
+  helpButton.addEventListener('click', openHelpModal);
+}
+if (closeHelpButton) {
+  closeHelpButton.addEventListener('click', closeHelpModal);
+}
+if (helpModal) {
+  helpModal.addEventListener('click', (event) => {
+    // Close when clicking the backdrop (outside the inner content)
+    if (event.target === helpModal) {
+      closeHelpModal();
+    }
+  });
+}
 
 syncProviderDefaults();
 setTokenModalStep(1);
