@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TurtleLab Admin</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="admin-page">
+      <section class="panel" aria-labelledby="admin-login-title">
+        <h1 id="admin-login-title">Community Gallery Admin</h1>
+        <form id="admin-login-form" class="token-form">
+          <label for="admin-password">Admin password</label>
+          <input id="admin-password" type="password" autocomplete="current-password" required />
+          <div class="button-row">
+            <button type="submit">Load submissions</button>
+            <button id="admin-refresh-button" type="button" class="secondary-button">Refresh</button>
+          </div>
+          <p id="admin-status" class="token-status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="panel" aria-labelledby="admin-submissions-title">
+        <h2 id="admin-submissions-title">Submissions</h2>
+        <div id="admin-entry-list" class="admin-entry-list"></div>
+      </section>
+    </main>
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "6236911c-9314-4ea8-aeea-c31dfba60a71",
+    "status": "accepted",
+    "name": "Manual User",
+    "email": "manual@example.com",
+    "prompt": "draw a star",
+    "code": "penup()\nhome()\npendown()",
+    "title": "Star",
+    "description": "A star",
+    "explanation": "Star drawing",
+    "tags": [
+      "star"
+    ],
+    "createdAt": "2026-05-10T15:58:39.122Z",
+    "reviewedAt": "2026-05-10T15:58:42.588Z"
+  }
+]

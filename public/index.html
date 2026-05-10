@@ -101,11 +101,12 @@
         <section class="panel explain-panel" aria-label="Explain panel">
           <div class="tab-header">
             <div class="tab-buttons">
-              <button id="explain-tab-button" type="button" class="tab-button active" aria-selected="true" aria-controls="explain-tab-content">Explain</button>
-              <button id="saved-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="saved-tab-content">Saved</button>
-              <button id="debug-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="debug-tab-content">AI Debug</button>
+                <button id="explain-tab-button" type="button" class="tab-button active" aria-selected="true" aria-controls="explain-tab-content">Explain</button>
+                <button id="saved-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="saved-tab-content">Saved</button>
+                <button id="debug-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="debug-tab-content">AI Debug</button>
+                <button id="community-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="community-tab-content">Community</button>
+              </div>
             </div>
-          </div>
 
           <div id="explain-tab-content" class="tab-content active">
             <div id="explain-loading" hidden>
@@ -147,6 +148,22 @@
             <div id="debug-log" class="debug-log" aria-live="polite">
               <p class="debug-empty">AI debug log will appear here as requests are made.</p>
             </div>
+          </div>
+
+          <div id="community-tab-content" class="tab-content">
+            <p class="panel-subtitle">Submit your drawing for admin review and browse approved community artwork.</p>
+            <form id="community-submit-form" class="community-submit-form">
+              <label for="community-name">Your name</label>
+              <input id="community-name" type="text" maxlength="120" required />
+              <label for="community-email">Your email (admin only)</label>
+              <input id="community-email" type="email" maxlength="200" required />
+              <div class="button-row">
+                <button id="community-submit-button" type="submit">Submit Current Drawing</button>
+                <button id="community-refresh-button" type="button" class="secondary-button">Refresh Gallery</button>
+              </div>
+              <p id="community-submit-status" class="token-status" aria-live="polite"></p>
+            </form>
+            <div id="community-gallery-list" class="community-gallery-list"></div>
           </div>
         </section>
       </main>

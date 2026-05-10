@@ -7,6 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
 const { URL } = require('node:url');
 const {
   defaultSettings,
@@ -41,6 +42,13 @@ const SESSION_TOKEN_TTL_MS = Number(process.env.SESSION_TOKEN_TTL_MS || DEFAULT_
 const MIN_SESSION_ID_LENGTH = 16;
 const MAX_SESSION_ID_LENGTH = 200;
 const SESSION_ID_PATTERN = new RegExp(`^[a-zA-Z0-9-]{${MIN_SESSION_ID_LENGTH},${MAX_SESSION_ID_LENGTH}}$`);
+const ADMIN_PORTAL_PASSWORD = String(process.env.ADMIN_PORTAL_PASSWORD || '');
+const ADMIN_NOTIFICATION_WEBHOOK_URL = String(process.env.ADMIN_NOTIFICATION_WEBHOOK_URL || '').trim();
+const COMMUNITY_GALLERY_TABLE_SAS_URL = String(process.env.COMMUNITY_GALLERY_TABLE_SAS_URL || '').trim();
+const COMMUNITY_GALLERY_TABLE_PARTITION = String(process.env.COMMUNITY_GALLERY_TABLE_PARTITION || 'gallery').slice(0, 100);
+const COMMUNITY_GALLERY_CACHE_FILE = process.env.COMMUNITY_GALLERY_CACHE_FILE
+  || path.join(IS_TEST_RUNTIME ? os.tmpdir() : __dirname, 'community-gallery-cache.json');
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PROVIDER_DEFAULTS = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
@@ -112,6 +120,8 @@ Before you write a single command, sketch the full drawing in your head:
 
 const rateLimitStore = new Map();
 const sessionTokenStore = new Map();
+const communityGalleryStore = new Map();
+let communityGalleryLoaded = false;
 
 let telemetryClient = null;
 if (!IS_TEST_RUNTIME && appInsights && APPINSIGHTS_CONNECTION_STRING) {
@@ -323,6 +333,345 @@ function normalizeProvider(rawProvider) {
 
 function trimTo(value, maxLength) {
   return String(value || '').trim().slice(0, maxLength);
+}
+
+function isValidEmail(email) {
+  return EMAIL_PATTERN.test(String(email || '').trim());
+}
+
+function normalizeTag(tag) {
+  return trimTo(tag, 32)
+    .toLowerCase()
+    .replace(/[^a-z0-9 -]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function fallbackTagsForEntry(entry) {
+  const haystack = `${entry.title} ${entry.description} ${entry.prompt}`.toLowerCase();
+  const seed = [];
+  const keywordTags = [
+    ['robot', 'robot'],
+    ['house', 'house'],
+    ['tree', 'tree'],
+    ['flower', 'flower'],
+    ['star', 'star'],
+    ['sun', 'sun'],
+    ['moon', 'moon'],
+    ['cat', 'animal'],
+    ['dog', 'animal'],
+    ['bird', 'animal'],
+    ['fish', 'animal'],
+    ['car', 'vehicle'],
+    ['rocket', 'space'],
+    ['planet', 'space'],
+    ['heart', 'love'],
+    ['circle', 'shape'],
+    ['square', 'shape'],
+    ['triangle', 'shape']
+  ];
+
+  for (const [keyword, tag] of keywordTags) {
+    if (haystack.includes(keyword)) {
+      seed.push(tag);
+    }
+  }
+
+  if (seed.length === 0) {
+    seed.push('drawing');
+  }
+
+  return Array.from(new Set(seed.map(normalizeTag).filter(Boolean))).slice(0, 6);
+}
+
+function parseMaybeJson(value, fallback) {
+  if (!value) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function buildPublicGalleryEntry(entry) {
+  return {
+    id: entry.id,
+    name: entry.name,
+    prompt: entry.prompt,
+    code: entry.code,
+    title: entry.title,
+    description: entry.description,
+    explanation: entry.explanation,
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    createdAt: entry.createdAt
+  };
+}
+
+function buildAdminGalleryEntry(entry) {
+  return {
+    ...buildPublicGalleryEntry(entry),
+    email: entry.email,
+    status: entry.status,
+    reviewedAt: entry.reviewedAt || null
+  };
+}
+
+function galleryEntriesSorted() {
+  return Array.from(communityGalleryStore.values()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+function tableSasUrl(pathSuffix = '', extraQuery = {}) {
+  if (!COMMUNITY_GALLERY_TABLE_SAS_URL) {
+    return '';
+  }
+  const source = new URL(COMMUNITY_GALLERY_TABLE_SAS_URL);
+  const target = new URL(`${source.origin}${source.pathname}${pathSuffix}`);
+  for (const [key, value] of source.searchParams.entries()) {
+    target.searchParams.append(key, value);
+  }
+  for (const [key, value] of Object.entries(extraQuery)) {
+    target.searchParams.set(key, value);
+  }
+  return target.toString();
+}
+
+function tableHeaders(contentType = 'application/json') {
+  return {
+    Accept: 'application/json;odata=nometadata',
+    'Content-Type': contentType,
+    'x-ms-date': new Date().toUTCString(),
+    'x-ms-version': '2019-02-02'
+  };
+}
+
+function cacheSnapshot() {
+  return galleryEntriesSorted().map((entry) => ({ ...entry }));
+}
+
+function writeGalleryCacheFile() {
+  try {
+    fs.writeFileSync(COMMUNITY_GALLERY_CACHE_FILE, JSON.stringify(cacheSnapshot(), null, 2), 'utf8');
+  } catch {
+    // Cache file writes are best effort.
+  }
+}
+
+function applyGalleryRows(rows) {
+  communityGalleryStore.clear();
+  for (const row of rows || []) {
+    if (!row || !row.id) {
+      continue;
+    }
+    communityGalleryStore.set(row.id, row);
+  }
+  communityGalleryLoaded = true;
+}
+
+function deserializeTableEntity(entity) {
+  return {
+    id: trimTo(entity.RowKey, 120),
+    status: trimTo(entity.status || 'pending', 30) || 'pending',
+    name: trimTo(entity.name, 120),
+    email: trimTo(entity.email, 200).toLowerCase(),
+    prompt: trimTo(entity.prompt, 400),
+    code: trimTo(entity.code, 20_000),
+    title: trimTo(entity.title, 160),
+    description: trimTo(entity.description, 500),
+    explanation: trimTo(entity.explanation, 700),
+    tags: parseMaybeJson(entity.tagsJson, []),
+    createdAt: trimTo(entity.createdAt, 50),
+    reviewedAt: trimTo(entity.reviewedAt, 50) || null
+  };
+}
+
+function serializeTableEntity(entry) {
+  return {
+    PartitionKey: COMMUNITY_GALLERY_TABLE_PARTITION,
+    RowKey: entry.id,
+    status: entry.status,
+    name: entry.name,
+    email: entry.email,
+    prompt: entry.prompt,
+    code: entry.code,
+    title: entry.title,
+    description: entry.description,
+    explanation: entry.explanation,
+    tagsJson: JSON.stringify(entry.tags || []),
+    createdAt: entry.createdAt,
+    reviewedAt: entry.reviewedAt || ''
+  };
+}
+
+async function loadGalleryCache() {
+  if (communityGalleryLoaded) {
+    return;
+  }
+
+  if (COMMUNITY_GALLERY_TABLE_SAS_URL) {
+    try {
+      const url = tableSasUrl('', {
+        $filter: `PartitionKey eq '${COMMUNITY_GALLERY_TABLE_PARTITION}'`
+      });
+      const response = await fetch(url, { headers: tableHeaders() });
+      if (response.ok) {
+        const payload = await response.json();
+        const rows = Array.isArray(payload?.value) ? payload.value.map(deserializeTableEntity) : [];
+        applyGalleryRows(rows);
+        writeGalleryCacheFile();
+        return;
+      }
+    } catch {
+      // Continue to disk cache fallback.
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(COMMUNITY_GALLERY_CACHE_FILE, 'utf8'));
+    if (Array.isArray(parsed)) {
+      applyGalleryRows(parsed.map((entry) => ({
+        ...entry,
+        tags: Array.isArray(entry.tags) ? entry.tags : []
+      })));
+      return;
+    }
+  } catch {
+    // No local cache yet.
+  }
+
+  applyGalleryRows([]);
+}
+
+async function persistGalleryEntry(entry) {
+  communityGalleryStore.set(entry.id, entry);
+  writeGalleryCacheFile();
+
+  if (!COMMUNITY_GALLERY_TABLE_SAS_URL) {
+    return;
+  }
+
+  const entity = serializeTableEntity(entry);
+  const response = await fetch(tableSasUrl(), {
+    method: 'POST',
+    headers: tableHeaders(),
+    body: JSON.stringify(entity)
+  });
+  if (!response.ok) {
+    throw new Error('Could not persist gallery submission.');
+  }
+}
+
+async function mergeGalleryEntry(entry) {
+  communityGalleryStore.set(entry.id, entry);
+  writeGalleryCacheFile();
+
+  if (!COMMUNITY_GALLERY_TABLE_SAS_URL) {
+    return;
+  }
+
+  const response = await fetch(tableSasUrl(`(PartitionKey='${COMMUNITY_GALLERY_TABLE_PARTITION.replace(/'/g, "''")}',RowKey='${entry.id.replace(/'/g, "''")}')`), {
+    method: 'PUT',
+    headers: {
+      ...tableHeaders(),
+      'If-Match': '*'
+    },
+    body: JSON.stringify(serializeTableEntity(entry))
+  });
+  if (!response.ok) {
+    throw new Error('Could not update gallery submission.');
+  }
+}
+
+function adminPasswordValid(req) {
+  if (!ADMIN_PORTAL_PASSWORD) {
+    return false;
+  }
+  const headerValue = String(req.headers['x-admin-password'] || '');
+  const expected = Buffer.from(ADMIN_PORTAL_PASSWORD);
+  const actual = Buffer.from(headerValue);
+  if (expected.length !== actual.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(expected, actual);
+}
+
+async function notifyAdminSubmission(entry) {
+  if (!ADMIN_NOTIFICATION_WEBHOOK_URL) {
+    return false;
+  }
+
+  const response = await fetch(ADMIN_NOTIFICATION_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event: 'community_gallery_submission',
+      submittedAt: entry.createdAt,
+      id: entry.id,
+      name: entry.name,
+      email: entry.email,
+      prompt: entry.prompt,
+      title: entry.title,
+      description: entry.description
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to send admin notification.');
+  }
+  return true;
+}
+
+async function generateTagsForEntry(entry, sessionContext) {
+  const fallback = fallbackTagsForEntry(entry);
+  const aiConfig = resolveAiConfig(sessionContext.sessionId);
+  if (!aiConfig) {
+    return fallback;
+  }
+
+  try {
+    const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${aiConfig.apiKey}`
+      },
+      body: JSON.stringify({
+        model: aiConfig.model,
+        temperature: 0.2,
+        messages: [
+          {
+            role: 'system',
+            content: 'Return ONLY JSON: an array of 1-6 short lowercase tags (no punctuation) for a turtle drawing.'
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              title: entry.title,
+              description: entry.description,
+              prompt: entry.prompt,
+              codePreview: entry.code.slice(0, 700)
+            })
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      return fallback;
+    }
+    const payload = await response.json();
+    const content = String(payload?.choices?.[0]?.message?.content || '').trim().replace(/^```[\w]*\n?/m, '').replace(/```$/m, '');
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed)) {
+      return fallback;
+    }
+    const tags = Array.from(new Set(parsed.map(normalizeTag).filter(Boolean))).slice(0, 6);
+    return tags.length > 0 ? tags : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function normalizeBaseUrl(url, fallback) {
@@ -580,7 +929,9 @@ function inferMimeType(filePath) {
 }
 
 function serveStaticFile(res, pathname) {
-  const target = pathname === '/' ? '/index.html' : pathname;
+  const target = pathname === '/'
+    ? '/index.html'
+    : (pathname === '/admin' ? '/admin.html' : pathname);
   const safeTarget = path.normalize(target).replace(/^([.][.][/\\])+/, '');
   const filePath = path.join(PUBLIC_DIR, safeTarget);
 
@@ -867,6 +1218,134 @@ function handleClientTelemetry(req, res, sessionContext) {
     });
 }
 
+function handleGalleryList(res, sessionContext) {
+  loadGalleryCache()
+    .then(() => {
+      const acceptedEntries = galleryEntriesSorted()
+        .filter((entry) => entry.status === 'accepted')
+        .map(buildPublicGalleryEntry);
+      jsonResponse(res, 200, {
+        items: acceptedEntries
+      }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      jsonResponse(res, 500, { error: error.message || 'Could not load gallery.' }, sessionContext.responseHeaders);
+    });
+}
+
+function handleGallerySubmission(req, res, sessionContext) {
+  readJson(req)
+    .then(async (body) => {
+      await loadGalleryCache();
+      const name = trimTo(body.name, 120);
+      const email = trimTo(body.email, 200).toLowerCase();
+      const prompt = trimTo(body.prompt, 400);
+      const code = trimTo(body.code, 20_000);
+      const title = trimTo(body.metadata?.title, 160);
+      const description = trimTo(body.metadata?.description, 500);
+      const explanation = trimTo(body.metadata?.explanation, 700);
+
+      if (!name || !isValidEmail(email) || !prompt || !code) {
+        jsonResponse(res, 400, {
+          error: 'Please provide name, valid email, prompt, and code.'
+        }, sessionContext.responseHeaders);
+        return;
+      }
+
+      const createdAt = new Date().toISOString();
+      const entry = {
+        id: createSessionId(),
+        status: 'pending',
+        name,
+        email,
+        prompt,
+        code,
+        title: title || 'Community submission',
+        description,
+        explanation,
+        tags: [],
+        createdAt,
+        reviewedAt: null
+      };
+
+      await persistGalleryEntry(entry);
+      let adminNotified = false;
+      let notificationError = '';
+      try {
+        adminNotified = await notifyAdminSubmission(entry);
+      } catch {
+        notificationError = 'Submission saved, but notification delivery failed.';
+      }
+
+      jsonResponse(res, 201, {
+        ok: true,
+        id: entry.id,
+        status: entry.status,
+        adminNotified,
+        notificationError: notificationError || undefined
+      }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      jsonResponse(res, 400, { error: error.message || 'Could not save submission.' }, sessionContext.responseHeaders);
+    });
+}
+
+function handleAdminList(req, res, sessionContext) {
+  if (!adminPasswordValid(req)) {
+    jsonResponse(res, 401, { error: 'Unauthorized.' }, sessionContext.responseHeaders);
+    return;
+  }
+  loadGalleryCache()
+    .then(() => {
+      jsonResponse(res, 200, {
+        items: galleryEntriesSorted().map(buildAdminGalleryEntry)
+      }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      jsonResponse(res, 500, { error: error.message || 'Could not load submissions.' }, sessionContext.responseHeaders);
+    });
+}
+
+function handleAdminDecision(req, res, sessionContext, entryId) {
+  if (!adminPasswordValid(req)) {
+    jsonResponse(res, 401, { error: 'Unauthorized.' }, sessionContext.responseHeaders);
+    return;
+  }
+
+  readJson(req)
+    .then(async (body) => {
+      await loadGalleryCache();
+      const decision = trimTo(body.decision || body.status, 20).toLowerCase();
+      if (decision !== 'accept' && decision !== 'reject' && decision !== 'accepted' && decision !== 'rejected') {
+        jsonResponse(res, 400, { error: 'Decision must be accept or reject.' }, sessionContext.responseHeaders);
+        return;
+      }
+
+      const target = communityGalleryStore.get(entryId);
+      if (!target) {
+        jsonResponse(res, 404, { error: 'Submission not found.' }, sessionContext.responseHeaders);
+        return;
+      }
+
+      target.status = decision.startsWith('accept') ? 'accepted' : 'rejected';
+      if (target.status === 'accepted') {
+        target.tags = await generateTagsForEntry(target, sessionContext);
+      } else {
+        target.tags = [];
+      }
+      target.reviewedAt = new Date().toISOString();
+      await mergeGalleryEntry(target);
+
+      jsonResponse(res, 200, {
+        ok: true,
+        item: buildAdminGalleryEntry(target)
+      }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      jsonResponse(res, 400, { error: error.message || 'Could not update submission.' }, sessionContext.responseHeaders);
+    });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const operationId = getOperationId(req);
@@ -919,6 +1398,27 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/gallery') {
+    handleGalleryList(res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/gallery/submissions') {
+    handleGallerySubmission(req, res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/admin/submissions') {
+    handleAdminList(req, res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'POST' && /^\/api\/admin\/submissions\/[^/]+\/decision$/.test(url.pathname)) {
+    const [, , , , entryId] = url.pathname.split('/');
+    handleAdminDecision(req, res, sessionContext, decodeURIComponent(entryId || ''));
+    return;
+  }
+
   if (req.method === 'GET') {
     serveStaticFile(res, url.pathname);
     return;
@@ -928,6 +1428,9 @@ const server = http.createServer((req, res) => {
 });
 
 if (require.main === module) {
+  loadGalleryCache().catch(() => {
+    // Cache warmup is best effort.
+  });
   server.listen(PORT, HOST, () => {
     // eslint-disable-next-line no-console
     console.log(`TurtleLab server running at http://${HOST}:${PORT}`);
