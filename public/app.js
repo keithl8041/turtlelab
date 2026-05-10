@@ -219,9 +219,19 @@ const suggestionsList = document.querySelector('#suggestions-list');
 const savedProjects = document.querySelector('#saved-projects');
 
 const explainTabButton = document.querySelector('#explain-tab-button');
+const savedTabButton = document.querySelector('#saved-tab-button');
 const debugTabButton = document.querySelector('#debug-tab-button');
 const explainTabContent = document.querySelector('#explain-tab-content');
+const savedTabContent = document.querySelector('#saved-tab-content');
 const debugTabContent = document.querySelector('#debug-tab-content');
+const explainLoading = document.querySelector('#explain-loading');
+const explainError = document.querySelector('#explain-error');
+const explainErrorMessage = document.querySelector('#explain-error-message');
+const explainRetryButton = document.querySelector('#explain-retry-button');
+const explainResult = document.querySelector('#explain-result');
+const explainTitleEl = document.querySelector('#explain-title');
+const explainDescriptionEl = document.querySelector('#explain-description');
+const suggestionsSection = document.querySelector('#suggestions-section');
 const debugLog = document.querySelector('#debug-log');
 const clearDebugButton = document.querySelector('#clear-debug-button');
 
@@ -239,7 +249,8 @@ const state = {
   currentPlan: [],
   animationTimer: null,
   animationRaf: null,
-  isGenerating: false
+  isGenerating: false,
+  typingAnimation: null
 };
 
 function addDebugLogEntry(message, type = 'info', data = null) {
@@ -276,21 +287,84 @@ function clearDebugLog() {
   debugLog.innerHTML = '<p class="debug-empty">AI debug log will appear here as requests are made.</p>';
 }
 
+function showExplainLoading() {
+  explainLoading.hidden = false;
+  explainError.hidden = true;
+  explainResult.hidden = true;
+}
+
+async function showExplainResult({ title, description, explanation, note, reviewHintText, warnings, suggestions }) {
+  explainLoading.hidden = true;
+  explainError.hidden = true;
+  explainResult.hidden = false;
+  transparencyNote.textContent = note || '';
+  reviewHint.textContent = reviewHintText || 'Suggest → Review → Edit: let the AI guess, then fix the code.';
+  setWarnings(warnings || []);
+  setSuggestions(suggestions || []);
+
+  // Animate text typing sequentially
+  await animateTextTyping(explainTitleEl, title || '', 25);
+  await animateTextTyping(explainDescriptionEl, description || '', 15);
+  await animateTextTyping(aiOverview, explanation || '', 8);
+}
+
+function showExplainError(message) {
+  explainLoading.hidden = true;
+  explainError.hidden = false;
+  explainResult.hidden = true;
+  explainErrorMessage.textContent = message;
+}
+
+function cancelTypingAnimation() {
+  if (state.typingAnimation) {
+    clearTimeout(state.typingAnimation);
+    state.typingAnimation = null;
+  }
+}
+
+function animateTextTyping(element, text, speed = 30) {
+  return new Promise((resolve) => {
+    element.textContent = '';
+    let charIndex = 0;
+
+    const type = () => {
+      if (charIndex < text.length) {
+        element.textContent += text[charIndex];
+        charIndex += 1;
+        state.typingAnimation = setTimeout(type, speed);
+      } else {
+        state.typingAnimation = null;
+        resolve();
+      }
+    };
+
+    type();
+  });
+}
+
 function switchToTab(tabName) {
-  if (tabName === 'explain') {
-    explainTabButton.classList.add('active');
-    debugTabButton.classList.remove('active');
-    explainTabButton.setAttribute('aria-selected', 'true');
-    debugTabButton.setAttribute('aria-selected', 'false');
-    explainTabContent.classList.add('active');
-    debugTabContent.classList.remove('active');
-  } else if (tabName === 'debug') {
-    debugTabButton.classList.add('active');
-    explainTabButton.classList.remove('active');
-    debugTabButton.setAttribute('aria-selected', 'true');
-    explainTabButton.setAttribute('aria-selected', 'false');
-    debugTabContent.classList.add('active');
-    explainTabContent.classList.remove('active');
+  const allButtons = [explainTabButton, savedTabButton, debugTabButton];
+  const allContents = [explainTabContent, savedTabContent, debugTabContent];
+
+  for (const btn of allButtons) {
+    btn.classList.remove('active');
+    btn.setAttribute('aria-selected', 'false');
+  }
+  for (const content of allContents) {
+    content.classList.remove('active');
+  }
+
+  const tabMap = {
+    explain: { button: explainTabButton, content: explainTabContent },
+    saved: { button: savedTabButton, content: savedTabContent },
+    debug: { button: debugTabButton, content: debugTabContent }
+  };
+
+  const tab = tabMap[tabName];
+  if (tab) {
+    tab.button.classList.add('active');
+    tab.button.setAttribute('aria-selected', 'true');
+    tab.content.classList.add('active');
   }
 }
 
@@ -472,6 +546,8 @@ function saveDraftProject() {
     prompt: promptInput.value,
     code: codeEditor.value,
     aiCode: state.aiCode,
+    explainTitle: explainTitleEl.textContent,
+    explainDescription: explainDescriptionEl.textContent,
     aiOverview: aiOverview.textContent,
     transparencyNote: transparencyNote.textContent,
     reviewHint: reviewHint.textContent,
@@ -493,6 +569,7 @@ function setWarnings(warnings) {
 
 function setSuggestions(suggestions) {
   suggestionsList.innerHTML = '';
+  suggestionsSection.hidden = !suggestions || suggestions.length === 0;
   for (const suggestion of suggestions || []) {
     const item = document.createElement('li');
     item.textContent = suggestion;
@@ -501,14 +578,20 @@ function setSuggestions(suggestions) {
 }
 
 function applySavedProject(project) {
+  cancelTypingAnimation();
   promptInput.value = project.prompt || '';
   codeEditor.value = project.code || '';
   state.aiCode = project.aiCode || project.code || '';
+  explainTitleEl.textContent = project.explainTitle || '';
+  explainDescriptionEl.textContent = project.explainDescription || '';
   aiOverview.textContent = project.aiOverview || '';
   transparencyNote.textContent = project.transparencyNote || '';
   reviewHint.textContent = project.reviewHint || 'Suggest → Review → Edit: let the AI guess, then fix the code.';
   setWarnings(project.warnings || []);
   setSuggestions(project.suggestions || []);
+  explainLoading.hidden = true;
+  explainError.hidden = true;
+  explainResult.hidden = false;
   syncHighlight();
 }
 
@@ -563,6 +646,8 @@ function saveToHistory() {
     prompt: promptInput.value,
     code: codeEditor.value,
     aiCode: state.aiCode,
+    explainTitle: explainTitleEl.textContent,
+    explainDescription: explainDescriptionEl.textContent,
     aiOverview: aiOverview.textContent,
     transparencyNote: transparencyNote.textContent,
     reviewHint: reviewHint.textContent,
@@ -1260,16 +1345,18 @@ function isHappyRobotPrompt(prompt) {
   return String(prompt || '').trim().toLowerCase() === HAPPY_ROBOT_PROMPT;
 }
 
-async function generateFromPrompt(event) {
-  event.preventDefault();
+async function doGenerate() {
   if (state.isGenerating) {
     return;
   }
 
   codeError.textContent = '';
+  cancelTypingAnimation();
+  closePromptModal();
+  switchToTab('explain');
+  showExplainLoading();
   setGeneratingUi(true);
   clearDebugLog();
-  switchToTab('explain');
 
   try {
     if (isHappyRobotPrompt(promptInput.value)) {
@@ -1277,14 +1364,17 @@ async function generateFromPrompt(event) {
       codeEditor.value = HAPPY_ROBOT_CODE;
       syncHighlight();
 
-      aiOverview.textContent = 'Built-in example: happy robot.';
-      transparencyNote.textContent = 'This result uses a local hardcoded example and bypasses AI generation.';
-      reviewHint.textContent = 'Suggest → Review → Edit: let the AI guess, then fix the code.';
-      setWarnings([]);
-      setSuggestions([]);
+      showExplainResult({
+        title: 'Happy Robot',
+        description: 'Built-in example: a friendly robot drawn with turtle code.',
+        explanation: 'Built-in example: happy robot.',
+        note: 'This result uses a local hardcoded example and bypasses AI generation.',
+        reviewHintText: 'Suggest → Review → Edit: let the AI guess, then fix the code.',
+        warnings: [],
+        suggestions: []
+      });
 
       await runEditedCode();
-      closePromptModal();
       return;
     }
 
@@ -1320,23 +1410,31 @@ async function generateFromPrompt(event) {
     codeEditor.value = payload.displayCode;
     syncHighlight();
 
-    aiOverview.textContent = payload.aiOverview || payload.program.explanation || '';
-    transparencyNote.textContent = payload.transparencyNote || '';
-    reviewHint.textContent = payload.workflowHint || 'Suggest → Review → Edit: let the AI guess, then fix the code.';
-    setWarnings(payload.warnings || []);
-    setSuggestions(payload.suggestions || []);
+    showExplainResult({
+      title: payload.program.title || '',
+      description: payload.program.description || '',
+      explanation: payload.aiOverview || payload.program.explanation || '',
+      note: payload.transparencyNote || '',
+      reviewHintText: payload.workflowHint || 'Suggest → Review → Edit: let the AI guess, then fix the code.',
+      warnings: payload.warnings || [],
+      suggestions: payload.suggestions || []
+    });
 
     renderProgram(payload.program, state.currentPlan, animateToggle.checked);
     saveDraftProject();
-    closePromptModal();
   } catch (error) {
     emitClientTelemetry('generate_exception', {
       message: normalizeErrorMessage(error)
     });
-    codeError.textContent = error.message;
+    showExplainError(error.message);
   } finally {
     setGeneratingUi(false);
   }
+}
+
+async function generateFromPrompt(event) {
+  event.preventDefault();
+  await doGenerate();
 }
 
 async function runEditedCode() {
@@ -1447,8 +1545,10 @@ replayButton.addEventListener('click', () => {
 clearButton.addEventListener('click', clearCanvas);
 
 explainTabButton.addEventListener('click', () => switchToTab('explain'));
+savedTabButton.addEventListener('click', () => switchToTab('saved'));
 debugTabButton.addEventListener('click', () => switchToTab('debug'));
 clearDebugButton.addEventListener('click', clearDebugLog);
+explainRetryButton.addEventListener('click', doGenerate);
 
 syncProviderDefaults();
 refreshTokenStatus().catch(() => {

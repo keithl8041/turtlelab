@@ -98,36 +98,52 @@
           <p id="code-error" class="error" aria-live="polite"></p>
         </section>
 
-        <section class="panel explain-panel" aria-labelledby="explain-title">
+        <section class="panel explain-panel" aria-label="Explain panel">
           <div class="tab-header">
-            <h2 id="explain-title">Explain</h2>
             <div class="tab-buttons">
               <button id="explain-tab-button" type="button" class="tab-button active" aria-selected="true" aria-controls="explain-tab-content">Explain</button>
+              <button id="saved-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="saved-tab-content">Saved</button>
               <button id="debug-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="debug-tab-content">AI Debug</button>
             </div>
           </div>
 
           <div id="explain-tab-content" class="tab-content active">
-            <p id="transparency-note" class="transparency"></p>
-            <p id="session-notice" class="session-notice" aria-live="polite"></p>
-            <p id="ai-overview" class="ai-overview"></p>
-            <p id="review-hint" class="review-hint">Suggest → Review → Edit: let the AI guess, then fix the code.</p>
-            <ul id="warnings-list" class="warnings"></ul>
-            <div>
-              <h3>Try this next:</h3>
-              <ul id="suggestions-list"></ul>
+            <div id="explain-loading" hidden>
+              <span class="explain-spinner" aria-hidden="true"></span>
+              <p>Generating your drawing&hellip;</p>
             </div>
-            <div>
-              <h3>Saved drawings</h3>
-              <p class="panel-subtitle">Load any previous drawing from this browser.</p>
-              <div id="saved-projects" class="saved-projects"></div>
+
+            <div id="explain-error" hidden>
+              <p id="explain-error-message" class="explain-error-message" aria-live="assertive"></p>
+              <div class="button-row">
+                <button id="explain-retry-button" type="button">Try Again</button>
+              </div>
+            </div>
+
+            <div id="explain-result">
+              <p id="transparency-note" class="transparency"></p>
+              <p id="session-notice" class="session-notice" aria-live="polite"></p>
+              <h3 id="explain-title" class="explain-title"></h3>
+              <p id="explain-description" class="explain-description"></p>
+              <p id="ai-overview" class="ai-overview"></p>
+              <p id="review-hint" class="review-hint">Suggest → Review → Edit: let the AI guess, then fix the code.</p>
+              <ul id="warnings-list" class="warnings"></ul>
+              <div id="suggestions-section" hidden>
+                <h3>Try this next:</h3>
+                <ul id="suggestions-list"></ul>
+              </div>
             </div>
           </div>
 
+          <div id="saved-tab-content" class="tab-content">
+            <p class="panel-subtitle">Load any previous drawing from this browser.</p>
+            <div id="saved-projects" class="saved-projects"></div>
+          </div>
+
           <div id="debug-tab-content" class="tab-content">
-            <div class="debug-controls">
+            <!-- <div class="debug-controls">
               <button id="clear-debug-button" type="button" class="secondary-button">Clear Log</button>
-            </div>
+            </div> -->
             <div id="debug-log" class="debug-log" aria-live="polite">
               <p class="debug-empty">AI debug log will appear here as requests are made.</p>
             </div>

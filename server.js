@@ -359,23 +359,7 @@ function resolveAiConfig(sessionId) {
   return null;
 }
 
-const FALLBACK_COMMANDS = [
-  { cmd: 'penup' },
-  { cmd: 'home' },
-  { cmd: 'pendown' },
-  { cmd: 'penup' },
-  { cmd: 'goto', x: -120, y: -80 },
-  { cmd: 'pendown' },
-  { cmd: 'color', value: '#2563eb' },
-  {
-    cmd: 'repeat',
-    count: 4,
-    body: [
-      { cmd: 'forward', value: 160 },
-      { cmd: 'right', value: 90 }
-    ]
-  }
-];
+const FALLBACK_COMMANDS = [];
 
 async function commandsForPrompt(prompt, sessionId, operationId = 'none') {
   const aiConfig = resolveAiConfig(sessionId);
@@ -552,36 +536,23 @@ async function buildProgramFromPrompt(prompt, ageMode = 'kids', sessionId = '', 
     warnings.push('I made a simpler version so the turtle could draw it.');
   }
   if (!aiUsed) {
-    warnings.push('No AI token found (or provider unavailable) — showing a sample drawing instead.');
+    warnings.push('No AI token found (or provider unavailable) — cleared the canvas instead.');
   }
 
   const validation = validateProgram(program);
   if (!validation.valid) {
     const fallbackProgram = {
-      title: 'Simple Square',
-      description: 'A simple starter drawing.',
-      explanation: 'The turtle draws four equal sides and turns right 90 degrees each time.',
+      title: 'No drawing available',
+      description: 'The canvas was cleared because the AI response could not be used safely.',
+      explanation: 'The turtle program could not be validated, so no drawing was rendered.',
       settings: { ...defaultSettings },
-      commands: [
-        { cmd: 'penup' },
-        { cmd: 'goto', x: -100, y: -100 },
-        { cmd: 'pendown' },
-        { cmd: 'color', value: '#2563eb' },
-        {
-          cmd: 'repeat',
-          count: 4,
-          body: [
-            { cmd: 'forward', value: 200 },
-            { cmd: 'right', value: 90 }
-          ]
-        }
-      ]
+      commands: []
     };
 
     const fallbackValidation = validateProgram(fallbackProgram);
     return {
       program: fallbackValidation.program,
-      warnings: [...warnings, 'The AI got a bit muddled, so I used a safe starter drawing.'],
+      warnings: [...warnings, 'The AI got a bit muddled, so I cleared the canvas instead.'],
       executionPlan: fallbackValidation.executionPlan,
       aiUsed,
       aiSource,
