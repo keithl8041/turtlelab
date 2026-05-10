@@ -282,6 +282,10 @@ textarea {
   font-style: italic;
 }
 
+.code-line {
+  display: block;
+}
+
 button {
   border: none;
   border-radius: 999px;

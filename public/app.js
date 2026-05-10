@@ -568,17 +568,19 @@ function syncHighlight() {
     const isErrorLine = state.lintErrorLines.has(lineNumber);
     const isActiveLine = activeLine === lineNumber;
 
-    let content = /^\s*#/.test(line)
+    const classes = ['code-line'];
+    if (isActiveLine) {
+      classes.push('code-active-line');
+    } else if (isErrorLine) {
+      classes.push('code-error-line');
+    }
+
+    const content = /^\s*#/.test(line)
       ? `<span class="code-comment">${escapedLine}</span>`
       : escapedLine;
 
-    if (isActiveLine) {
-      content = `<span class="code-active-line">${content}</span>`;
-    } else if (isErrorLine) {
-      content = `<span class="code-error-line">${content}</span>`;
-    }
-    return content;
-  }).join('\n');
+    return `<span class="${classes.join(' ')}">${content || ' '}</span>`;
+  }).join('');
   codeHighlight.innerHTML = html;
 }
 
