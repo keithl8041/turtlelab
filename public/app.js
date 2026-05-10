@@ -1456,6 +1456,13 @@ async function doGenerate() {
 
 async function generateFromPrompt(event) {
   event.preventDefault();
+  // Dismiss mobile keyboards: they stay open while the textarea retains focus.
+  // Defer one tick for iOS Safari reliability.
+  setTimeout(() => {
+    promptInput.blur();
+    document.activeElement?.blur?.();
+  }, 0);
+
   await doGenerate();
 }
 
