@@ -211,6 +211,9 @@ const restoreButton = document.querySelector('#restore-button');
 const copyButton = document.querySelector('#copy-button');
 const saveProjectButton = document.querySelector('#save-project-button');
 const codeError = document.querySelector('#code-error');
+const helpButton = document.querySelector('#help-button');
+const helpModal = document.querySelector('#help-modal');
+const closeHelpButton = document.querySelector('#close-help-button');
 
 const transparencyNote = document.querySelector('#transparency-note');
 const sessionNotice = document.querySelector('#session-notice');
@@ -728,6 +731,26 @@ function closePromptModal() {
     }
   } else {
     promptModal.removeAttribute('open');
+  }
+}
+
+function openHelpModal() {
+  if (typeof helpModal.showModal === 'function') {
+    if (!helpModal.open) {
+      helpModal.showModal();
+    }
+  } else {
+    helpModal.setAttribute('open', 'open');
+  }
+}
+
+function closeHelpModal() {
+  if (typeof helpModal.close === 'function') {
+    if (helpModal.open) {
+      helpModal.close();
+    }
+  } else {
+    helpModal.removeAttribute('open');
   }
 }
 
@@ -1606,6 +1629,15 @@ savedTabButton.addEventListener('click', () => switchToTab('saved'));
 debugTabButton.addEventListener('click', () => switchToTab('debug'));
 clearDebugButton.addEventListener('click', clearDebugLog);
 explainRetryButton.addEventListener('click', doGenerate);
+
+helpButton.addEventListener('click', openHelpModal);
+closeHelpButton.addEventListener('click', closeHelpModal);
+helpModal.addEventListener('click', (event) => {
+  // Close when clicking the backdrop (outside the inner content)
+  if (event.target === helpModal) {
+    closeHelpModal();
+  }
+});
 
 syncProviderDefaults();
 refreshTokenStatus().catch(() => {
