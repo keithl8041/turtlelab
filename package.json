@@ -1,5 +1,5 @@
 {
-  "name": "turtlelab",
+  "name": "turtle-flow-ai",
   "version": "1.0.0",
   "description": "A conversational coding environment where drawings emerge from language",
   "main": "server.js",
@@ -19,7 +19,7 @@
   "bugs": {
     "url": "https://github.com/keithl8041/turtlelab/issues"
   },
-  "homepage": "https://github.com/keithl8041/turtlelab#readme",
+  "homepage": "https://turtleflow.ai",
   "dependencies": {
     "applicationinsights": "^3.5.0",
     "dotenv": "^17.4.2"

@@ -35,7 +35,7 @@ const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS || 15_000);
 const APPINSIGHTS_CONNECTION_STRING = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING
   || 'InstrumentationKey=46b77f9a-e730-4cc7-93d8-c1e0240495cd;IngestionEndpoint=https://westeurope-5.in.applicationinsights.azure.com/;LiveEndpoint=https://westeurope.livediagnostics.monitor.azure.com/;ApplicationId=59276183-8b45-48d2-9bae-e2f44168981f';
 const IS_TEST_RUNTIME = process.env.NODE_ENV === 'test' || process.argv.includes('--test');
-const SESSION_COOKIE_NAME = 'turtlelab.sid';
+const SESSION_COOKIE_NAME = 'turtleflow.sid';
 const DEFAULT_SESSION_TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
 const SESSION_TOKEN_TTL_MS = Number(process.env.SESSION_TOKEN_TTL_MS || DEFAULT_SESSION_TOKEN_TTL_MS);
 const MIN_SESSION_ID_LENGTH = 16;
@@ -127,7 +127,7 @@ if (!IS_TEST_RUNTIME && appInsights && APPINSIGHTS_CONNECTION_STRING) {
       .start();
     telemetryClient = appInsights.defaultClient;
     telemetryClient.commonProperties = {
-      service: 'turtlelab',
+      service: 'turtleflow',
       runtime: 'node'
     };
   } catch (error) {
@@ -930,7 +930,7 @@ const server = http.createServer((req, res) => {
 if (require.main === module) {
   server.listen(PORT, HOST, () => {
     // eslint-disable-next-line no-console
-    console.log(`TurtleLab server running at http://${HOST}:${PORT}`);
+    console.log(`Turtle Flow AI server running at http://${HOST}:${PORT}`);
   });
 }
 

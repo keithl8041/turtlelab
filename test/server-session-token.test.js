@@ -27,7 +27,7 @@ test('session token API stores token in memory and never returns token value', a
   const statusResponse = await fetch(`${baseUrl}/api/session/token-status`);
   assert.equal(statusResponse.status, 200);
   const setCookieHeader = statusResponse.headers.get('set-cookie');
-  assert.match(setCookieHeader, /turtlelab\.sid=/);
+  assert.match(setCookieHeader, /turtleflow\.sid=/);
   assert.match(setCookieHeader, /HttpOnly/i);
   const sessionCookie = cookieValue(setCookieHeader);
 

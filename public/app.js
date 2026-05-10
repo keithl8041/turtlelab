@@ -160,8 +160,8 @@ const MIN_SPEED = 1;
 const MAX_SPEED = 10;
 const DEFAULT_SPEED = 4;
 const MAX_TURN_DURATION_MS = 120;
-const PROJECT_DRAFT_KEY = 'turtlelab.project';
-const PROJECT_HISTORY_KEY = 'turtlelab.projects';
+const PROJECT_DRAFT_KEY = 'turtleflow.project';
+const PROJECT_HISTORY_KEY = 'turtleflow.projects';
 const MAX_SAVED_PROJECTS = 20;
 const PROVIDER_BASE_URLS = {
   openai: 'https://api.openai.com/v1',
@@ -399,7 +399,7 @@ function emitClientTelemetry(eventName, properties = {}, measurements = {}) {
     properties: {
       ...properties,
       clientSessionId: CLIENT_SESSION_ID,
-      page: 'turtlelab'
+      page: 'turtleflow'
     },
     measurements
   };
