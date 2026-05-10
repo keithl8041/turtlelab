@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "vite",
+    "dev": "concurrently --names \"backend,vite\" \"node server.js\" \"vite\"",
     "test": "node --test"
   },
   "repository": {
@@ -25,6 +25,7 @@
     "dotenv": "^17.4.2"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "vite": "^8.0.11"
   }
 }

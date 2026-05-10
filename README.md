@@ -13,14 +13,8 @@ Open http://localhost:3000.
 
 ## Development with hot reloading
 
-For a faster development loop with hot reloading, run both the backend server and the Vite dev server in separate terminals:
+Start both the backend and the Vite dev server together with one command:
 
-**Terminal 1 — backend:**
-```bash
-npm start
-```
-
-**Terminal 2 — Vite dev server:**
 ```bash
 npm run dev
 ```
