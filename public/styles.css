@@ -20,6 +20,23 @@ body {
   background: radial-gradient(circle at 20% 20%, #fff7ed 0%, #eef2ff 45%, #e0f2fe 100%);
 }
 
+.credit-footer {
+  width: 100%;
+  text-align: center;
+  padding: 0.6rem 1rem 1rem;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.credit-footer a {
+  color: #1d4ed8;
+  text-decoration: none;
+}
+
+.credit-footer a:hover {
+  text-decoration: underline;
+}
+
 /* Skip-navigation link for keyboard and screen-reader users */
 .skip-link {
   position: absolute;
@@ -447,6 +464,130 @@ button:disabled {
   color: #5b21b6;
   border: 1px solid #c4b5fd;
 }
+
+/* Tab styling */
+.tab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 0.75rem;
+}
+
+.tab-header h2 {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.tab-buttons {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.tab-button {
+  background: transparent;
+  color: #6b7280;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.2s;
+  min-height: auto;
+  touch-action: manipulation;
+}
+
+.tab-button:hover {
+  color: #374151;
+  background: rgba(107, 114, 128, 0.05);
+  filter: none;
+}
+
+.tab-button.active {
+  color: #ec4899;
+  border-bottom-color: #ec4899;
+  background: rgba(236, 72, 153, 0.05);
+}
+
+.tab-content {
+  display: none;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+.debug-controls {
+  margin-bottom: 0.75rem;
+}
+
+.debug-log {
+  background: #1f2937;
+  color: #d1d5db;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  font-family: "Fira Code", "Consolas", monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.debug-log-entry {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  border-left: 3px solid;
+}
+
+.debug-log-entry.request {
+  border-left-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  color: #93c5fd;
+}
+
+.debug-log-entry.response {
+  border-left-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  color: #86efac;
+}
+
+.debug-log-entry.error {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.debug-log-entry.info {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+}
+
+.debug-timestamp {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.debug-empty {
+  color: #6b7280;
+  text-align: center;
+  padding: 1rem;
+  margin: 0;
+}
+
+
 
 .token-form {
   display: grid;

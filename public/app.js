@@ -218,6 +218,13 @@ const warningsList = document.querySelector('#warnings-list');
 const suggestionsList = document.querySelector('#suggestions-list');
 const savedProjects = document.querySelector('#saved-projects');
 
+const explainTabButton = document.querySelector('#explain-tab-button');
+const debugTabButton = document.querySelector('#debug-tab-button');
+const explainTabContent = document.querySelector('#explain-tab-content');
+const debugTabContent = document.querySelector('#debug-tab-content');
+const debugLog = document.querySelector('#debug-log');
+const clearDebugButton = document.querySelector('#clear-debug-button');
+
 const ctx = canvas.getContext('2d');
 const spriteCanvas = document.querySelector('#turtle-sprite-canvas');
 const spCtx = spriteCanvas.getContext('2d');
@@ -234,6 +241,58 @@ const state = {
   animationRaf: null,
   isGenerating: false
 };
+
+function addDebugLogEntry(message, type = 'info', data = null) {
+  if (debugLog.querySelector('.debug-empty')) {
+    debugLog.innerHTML = '';
+  }
+
+  const entry = document.createElement('div');
+  entry.className = `debug-log-entry ${type}`;
+
+  const timestamp = document.createElement('span');
+  timestamp.className = 'debug-timestamp';
+  timestamp.textContent = new Date().toLocaleTimeString();
+  entry.append(timestamp);
+
+  const content = document.createElement('div');
+  content.textContent = message;
+  entry.append(content);
+
+  if (data) {
+    const dataDiv = document.createElement('pre');
+    dataDiv.textContent = JSON.stringify(data, null, 2);
+    dataDiv.style.margin = '0.25rem 0 0 0';
+    dataDiv.style.fontSize = '0.8rem';
+    dataDiv.style.overflow = 'auto';
+    entry.append(dataDiv);
+  }
+
+  debugLog.append(entry);
+  debugLog.scrollTop = debugLog.scrollHeight;
+}
+
+function clearDebugLog() {
+  debugLog.innerHTML = '<p class="debug-empty">AI debug log will appear here as requests are made.</p>';
+}
+
+function switchToTab(tabName) {
+  if (tabName === 'explain') {
+    explainTabButton.classList.add('active');
+    debugTabButton.classList.remove('active');
+    explainTabButton.setAttribute('aria-selected', 'true');
+    debugTabButton.setAttribute('aria-selected', 'false');
+    explainTabContent.classList.add('active');
+    debugTabContent.classList.remove('active');
+  } else if (tabName === 'debug') {
+    debugTabButton.classList.add('active');
+    explainTabButton.classList.remove('active');
+    debugTabButton.setAttribute('aria-selected', 'true');
+    explainTabButton.setAttribute('aria-selected', 'false');
+    debugTabContent.classList.add('active');
+    explainTabContent.classList.remove('active');
+  }
+}
 
 function createCorrelationId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -279,11 +338,55 @@ async function apiFetch(path, options = {}, telemetryMeta = {}) {
     'X-Correlation-Id': correlationId
   };
 
+  // Log the request
+  const requestInfo = {
+    correlationId,
+    path,
+    method,
+    headers: headers
+  };
+  
+  if (options.body) {
+    try {
+      requestInfo.body = JSON.parse(options.body);
+    } catch {
+      requestInfo.body = options.body;
+    }
+  }
+
+  addDebugLogEntry(`${method} ${path}`, 'request', requestInfo);
+
   try {
     const response = await fetch(path, {
       ...options,
       headers
     });
+
+    const durationMs = performance.now() - startedAt;
+
+    // Log the response
+    const responseClone = response.clone();
+    let responseBody = null;
+    try {
+      responseBody = await responseClone.json();
+    } catch {
+      responseBody = await responseClone.text();
+    }
+
+    const responseInfo = {
+      status: response.status,
+      statusText: response.statusText,
+      correlationId,
+      durationMs: durationMs.toFixed(2)
+    };
+
+    if (responseBody) {
+      responseInfo.body = responseBody;
+    }
+
+    addDebugLogEntry(`Response: ${response.status} ${response.statusText}`, 
+      response.ok ? 'response' : 'error', 
+      responseInfo);
 
     emitClientTelemetry('client_api_call', {
       correlationId,
@@ -293,11 +396,18 @@ async function apiFetch(path, options = {}, telemetryMeta = {}) {
       statusCode: String(response.status),
       flow: telemetryMeta.flow || 'general'
     }, {
-      durationMs: Number((performance.now() - startedAt).toFixed(2))
+      durationMs: Number(durationMs.toFixed(2))
     });
 
     return response;
   } catch (error) {
+    const durationMs = performance.now() - startedAt;
+    addDebugLogEntry(`Error: ${normalizeErrorMessage(error)}`, 'error', {
+      correlationId,
+      message: error.message,
+      durationMs: durationMs.toFixed(2)
+    });
+
     emitClientTelemetry('client_api_exception', {
       correlationId,
       path,
@@ -305,7 +415,7 @@ async function apiFetch(path, options = {}, telemetryMeta = {}) {
       flow: telemetryMeta.flow || 'general',
       message: normalizeErrorMessage(error)
     }, {
-      durationMs: Number((performance.now() - startedAt).toFixed(2))
+      durationMs: Number(durationMs.toFixed(2))
     });
     throw error;
   }
@@ -1158,6 +1268,8 @@ async function generateFromPrompt(event) {
 
   codeError.textContent = '';
   setGeneratingUi(true);
+  clearDebugLog();
+  switchToTab('explain');
 
   try {
     if (isHappyRobotPrompt(promptInput.value)) {
@@ -1333,6 +1445,10 @@ replayButton.addEventListener('click', () => {
   }
 });
 clearButton.addEventListener('click', clearCanvas);
+
+explainTabButton.addEventListener('click', () => switchToTab('explain'));
+debugTabButton.addEventListener('click', () => switchToTab('debug'));
+clearDebugButton.addEventListener('click', clearDebugLog);
 
 syncProviderDefaults();
 refreshTokenStatus().catch(() => {
