@@ -246,6 +246,7 @@ const explainTabContent = document.querySelector('#explain-tab-content');
 const savedTabContent = document.querySelector('#saved-tab-content');
 const debugTabContent = document.querySelector('#debug-tab-content');
 const communityTabContent = document.querySelector('#community-tab-content');
+const communityNoTokenNotice = document.querySelector('#community-no-token-notice');
 const explainLoading = document.querySelector('#explain-loading');
 const explainError = document.querySelector('#explain-error');
 const explainErrorMessage = document.querySelector('#explain-error-message');
@@ -281,7 +282,9 @@ const state = {
   typingAnimation: null,
   lintErrorLines: new Set(),
   activeExecutionLine: null,
-  tokenModalStep: 1
+  tokenModalStep: 1,
+  hasToken: false,
+  serverFallbackAvailable: false
 };
 
 function addDebugLogEntry(message, type = 'info', data = null) {
@@ -791,6 +794,13 @@ async function refreshCommunityGallery() {
 async function submitCommunityDrawing(event) {
   event.preventDefault();
   communitySubmitStatus.textContent = '';
+  
+  // Check if user has API access
+  if (!state.hasToken && !state.serverFallbackAvailable) {
+    communitySubmitStatus.textContent = 'You need to set up an API key to submit drawings. Please add an API key in the AI setup panel.';
+    return;
+  }
+  
   const metadata = {
     title: explainTitleEl.textContent || 'Community drawing',
     description: explainDescriptionEl.textContent || '',
@@ -969,11 +979,32 @@ function setSessionNotice(message = '', link = '') {
   updateElementVisibility(sessionNotice);
 }
 
+function updateApiGatedUi(hasToken) {
+  state.hasToken = hasToken;
+  const tokenRequired = !hasToken;
+  
+  // Generate button: disable if no token
+  generateButton.disabled = tokenRequired;
+  generateButton.setAttribute('aria-disabled', String(tokenRequired));
+  generateButton.title = tokenRequired 
+    ? 'Set up an API key to generate code from prompts' 
+    : 'Generate turtle code from your prompt';
+  
+  // Community submission form: hide if no token, show warning notice
+  if (communitySubmitForm) {
+    communitySubmitForm.hidden = tokenRequired;
+  }
+  if (communityNoTokenNotice) {
+    communityNoTokenNotice.hidden = !tokenRequired;
+  }
+}
+
 function setTokenStatusUi(status) {
   logoutButton.hidden = !Boolean(status.hasToken);
   logoutButton.disabled = !Boolean(status.hasToken);
   setAiConnectionBadge(status);
   setProviderHelpLink(status.provider || tokenProvider.value || 'openai');
+  state.serverFallbackAvailable = Boolean(status.serverFallbackAvailable);
 
   if (status.hasToken) {
     const modelText = status.model ? ` using model ${status.model}.` : ' with the app default model.';
@@ -983,6 +1014,9 @@ function setTokenStatusUi(status) {
   } else {
     tokenStatus.textContent = 'No API key set. You can still use saved examples or edit code manually.';
   }
+  
+  // Update API-gated UI based on token availability
+  updateApiGatedUi(Boolean(status.hasToken) || Boolean(status.serverFallbackAvailable));
 }
 
 function isCustomProvider(provider = tokenProvider.value) {
@@ -1633,6 +1667,14 @@ async function doGenerate() {
     return;
   }
 
+  // Check if user has API access
+  if (!state.hasToken && !state.serverFallbackAvailable) {
+    switchToTab('explain');
+    showExplainError('You need to set up an API key to generate code. Please add an API key in the AI setup panel.');
+    openTokenModal(1);
+    return;
+  }
+
   clearLintErrors();
   cancelTypingAnimation();
   closePromptModal();
@@ -1881,6 +1923,7 @@ helpModal.addEventListener('click', (event) => {
 
 syncProviderDefaults();
 setTokenModalStep(1);
+updateApiGatedUi(false); // Initialize with no token until status is loaded
 refreshTokenStatus({ bypassIntroOnToken: true }).catch(() => {
   setTokenStatusUi({ hasToken: false, serverFallbackAvailable: false, provider: null });
 });

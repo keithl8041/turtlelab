@@ -28,7 +28,7 @@
 
         <section class="panel intro-setup" aria-labelledby="setup-title">
           <h2 id="setup-title">AI setup</h2>
-          <p class="panel-subtitle">Bring your own API key if you want the app to use your provider account. Keys stay only in server memory for this session. Only limited functionality is available without an API key. </p>
+          <p class="panel-subtitle">Enter your own API key if you want the app to use your AI provider of choice to assist with drawing (recommended!). Keys stay only in server memory for this session. Only limited functionality is available without an API key. </p>
           <div class="ai-setup-launch">
             <button id="open-token-modal-button" type="button">Set Up AI Provider</button>
             <button id="skip-splash-button" type="button" class="secondary-button">Continue Without Key</button>
@@ -136,7 +136,7 @@
           <div class="button-row">
             <button id="run-button" type="button">Run</button>
             <button id="restore-button" type="button">Restore AI Version</button>
-            <button id="copy-button" type="button">Copy Code</button>
+            <!-- <button id="copy-button" type="button">Copy Code</button> -->
             <button id="save-project-button" type="button">Save Drawing</button>
           </div>
           <p id="code-error" class="error" aria-live="polite"></p>
@@ -191,6 +191,11 @@
 
           <div id="community-tab-content" class="tab-content">
             <p class="panel-subtitle">Submit your drawing for admin review and browse approved community artwork.</p>
+            <div id="community-no-token-notice" hidden>
+              <p class="panel-subtitle" style="color: #d97706; margin-bottom: 1rem;">
+                ⚠️ You need to set up an API key to submit drawings to the community. Please add an API key in the AI setup panel at the top.
+              </p>
+            </div>
             <form id="community-submit-form" class="community-submit-form">
               <label for="community-name">Your name</label>
               <input id="community-name" type="text" maxlength="120" required />
