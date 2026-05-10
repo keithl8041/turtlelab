@@ -241,9 +241,11 @@ const savedProjects = document.querySelector('#saved-projects');
 const explainTabButton = document.querySelector('#explain-tab-button');
 const savedTabButton = document.querySelector('#saved-tab-button');
 const debugTabButton = document.querySelector('#debug-tab-button');
+const communityTabButton = document.querySelector('#community-tab-button');
 const explainTabContent = document.querySelector('#explain-tab-content');
 const savedTabContent = document.querySelector('#saved-tab-content');
 const debugTabContent = document.querySelector('#debug-tab-content');
+const communityTabContent = document.querySelector('#community-tab-content');
 const explainLoading = document.querySelector('#explain-loading');
 const explainError = document.querySelector('#explain-error');
 const explainErrorMessage = document.querySelector('#explain-error-message');
@@ -254,6 +256,12 @@ const explainDescriptionEl = document.querySelector('#explain-description');
 const suggestionsSection = document.querySelector('#suggestions-section');
 const debugLog = document.querySelector('#debug-log');
 const clearDebugButton = document.querySelector('#clear-debug-button');
+const communitySubmitForm = document.querySelector('#community-submit-form');
+const communityName = document.querySelector('#community-name');
+const communityEmail = document.querySelector('#community-email');
+const communitySubmitStatus = document.querySelector('#community-submit-status');
+const communityGalleryList = document.querySelector('#community-gallery-list');
+const communityRefreshButton = document.querySelector('#community-refresh-button');
 
 const ctx = canvas.getContext('2d');
 const spriteCanvas = document.querySelector('#turtle-sprite-canvas');
@@ -377,8 +385,8 @@ function animateTextTyping(element, text, speed = 30) {
   }
 
 function switchToTab(tabName) {
-  const allButtons = [explainTabButton, savedTabButton, debugTabButton];
-  const allContents = [explainTabContent, savedTabContent, debugTabContent];
+  const allButtons = [explainTabButton, savedTabButton, debugTabButton, communityTabButton];
+  const allContents = [explainTabContent, savedTabContent, debugTabContent, communityTabContent];
 
   for (const btn of allButtons) {
     btn.classList.remove('active');
@@ -391,7 +399,8 @@ function switchToTab(tabName) {
   const tabMap = {
     explain: { button: explainTabButton, content: explainTabContent },
     saved: { button: savedTabButton, content: savedTabContent },
-    debug: { button: debugTabButton, content: debugTabContent }
+    debug: { button: debugTabButton, content: debugTabContent },
+    community: { button: communityTabButton, content: communityTabContent }
   };
 
   const tab = tabMap[tabName];
@@ -736,6 +745,89 @@ function saveToHistory() {
   renderSavedProjects();
 }
 
+function renderCommunityGallery(items = []) {
+  communityGalleryList.innerHTML = '';
+
+  if (!Array.isArray(items) || items.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'panel-subtitle';
+    empty.textContent = 'No approved community drawings yet.';
+    communityGalleryList.append(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const card = document.createElement('article');
+    card.className = 'community-card';
+    const tags = Array.isArray(item.tags) && item.tags.length > 0
+      ? `<p class="community-tags">${item.tags.map((tag) => `#${escapeHtml(tag)}`).join(' ')}</p>`
+      : '';
+
+    card.innerHTML = `
+      <h3>${escapeHtml(item.title || 'Community drawing')}</h3>
+      <p class="panel-subtitle">${escapeHtml(item.description || '')}</p>
+      <p>${escapeHtml(item.explanation || '')}</p>
+      <p><strong>By:</strong> ${escapeHtml(item.name || 'Anonymous')}</p>
+      <p><strong>Prompt:</strong> ${escapeHtml(item.prompt || '')}</p>
+      ${tags}
+      <details>
+        <summary>View code</summary>
+        <pre>${escapeHtml(item.code || '')}</pre>
+      </details>
+    `;
+    communityGalleryList.append(card);
+  }
+}
+
+async function refreshCommunityGallery() {
+  const response = await apiFetch('/api/gallery', {}, { flow: 'community-gallery' });
+  const payload = await readJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not load community gallery.');
+  }
+  renderCommunityGallery(payload.items || []);
+}
+
+async function submitCommunityDrawing(event) {
+  event.preventDefault();
+  communitySubmitStatus.textContent = '';
+  const metadata = {
+    title: explainTitleEl.textContent || 'Community drawing',
+    description: explainDescriptionEl.textContent || '',
+    explanation: aiOverview.textContent || ''
+  };
+  const payload = {
+    name: communityName.value,
+    email: communityEmail.value,
+    prompt: promptInput.value,
+    code: codeEditor.value,
+    metadata
+  };
+
+  const response = await apiFetch('/api/gallery/submissions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }, { flow: 'community-submit' });
+  const body = await readJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(body.error || 'Could not submit drawing.');
+  }
+
+  // Clear and hide the form after success to prevent duplicate submissions in the same session.
+  communitySubmitForm.reset();
+  communityName.value = '';
+  communityEmail.value = '';
+  communitySubmitForm.hidden = true;
+  const notice = `Thanks for your submission. Your drawing is now in review, and we will email you with the outcome.${body.id ? ` Reference ID: ${body.id}.` : ''}`;
+  communitySubmitStatus.textContent = notice;
+  try {
+    await refreshCommunityGallery();
+  } catch {
+    // Keep success state visible even if gallery refresh fails.
+  }
+}
+
 function openPromptModal() {
   if (typeof promptModal.showModal === 'function') {
     if (!promptModal.open) {
@@ -887,7 +979,7 @@ function setTokenStatusUi(status) {
     const modelText = status.model ? ` using model ${status.model}.` : ' with the app default model.';
     tokenStatus.textContent = `Using ${status.provider} API key in this session${modelText}`;
   } else if (status.serverFallbackAvailable) {
-    tokenStatus.textContent = 'No personal API key set. The app can still use a server default key.';
+    tokenStatus.textContent = '';
   } else {
     tokenStatus.textContent = 'No API key set. You can still use saved examples or edit code manually.';
   }
@@ -1755,8 +1847,28 @@ clearButton.addEventListener('click', clearCanvas);
 explainTabButton.addEventListener('click', () => switchToTab('explain'));
 savedTabButton.addEventListener('click', () => switchToTab('saved'));
 debugTabButton.addEventListener('click', () => switchToTab('debug'));
-clearDebugButton.addEventListener('click', clearDebugLog);
+communityTabButton.addEventListener('click', () => {
+  switchToTab('community');
+  refreshCommunityGallery().catch((error) => {
+    communitySubmitStatus.textContent = error.message;
+  });
+});
+if (clearDebugButton) {
+  clearDebugButton.addEventListener('click', clearDebugLog);
+}
 explainRetryButton.addEventListener('click', doGenerate);
+communitySubmitForm.addEventListener('submit', async (event) => {
+  try {
+    await submitCommunityDrawing(event);
+  } catch (error) {
+    communitySubmitStatus.textContent = error.message;
+  }
+});
+communityRefreshButton.addEventListener('click', () => {
+  refreshCommunityGallery().catch((error) => {
+    communitySubmitStatus.textContent = error.message;
+  });
+});
 
 helpButton.addEventListener('click', openHelpModal);
 closeHelpButton.addEventListener('click', closeHelpModal);
@@ -1776,5 +1888,8 @@ emitClientTelemetry('client_app_loaded');
 setupPromptChips();
 loadDraftProject();
 renderSavedProjects();
+refreshCommunityGallery().catch(() => {
+  renderCommunityGallery([]);
+});
 syncHighlight();
 clearCanvas();

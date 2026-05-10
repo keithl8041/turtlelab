@@ -50,6 +50,29 @@ Telemetry covers:
 - In-memory session tokens expire after 6 hours by default (`SESSION_TOKEN_TTL_MS` to override).
 - If no token is provided, the app still works with built-in/sample drawing flows.
 
+## Community gallery and admin
+
+- Users can submit their current drawing (code, prompt, and AI metadata) from the **Community** tab.
+- Submissions include name and email for admin follow-up; email addresses are never returned by the public gallery API.
+- Public gallery data is available at `GET /api/gallery` and only shows **accepted** entries.
+- Admin portal is available at `/admin` and requires `ADMIN_PORTAL_PASSWORD` for API actions.
+- Admin APIs:
+  - `GET /api/admin/submissions`
+  - `POST /api/admin/submissions/:id/decision` with `{ "decision": "accept" | "reject" }`
+- When accepted, entries receive AI-generated tags (with a local fallback tagger).
+- Configure Azure Table storage using:
+
+```bash
+COMMUNITY_GALLERY_TABLE_SAS_URL="https://<account>.table.core.windows.net/<table>?<sas>"
+COMMUNITY_GALLERY_TABLE_PARTITION="gallery"
+```
+
+- Optional admin notification webhook:
+
+```bash
+ADMIN_NOTIFICATION_WEBHOOK_URL="https://<logic-app-or-webhook-endpoint>"
+```
+
 ## Test
 
 ```bash

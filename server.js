@@ -7,6 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
 const { URL } = require('node:url');
 const {
   defaultSettings,
@@ -41,6 +42,15 @@ const SESSION_TOKEN_TTL_MS = Number(process.env.SESSION_TOKEN_TTL_MS || DEFAULT_
 const MIN_SESSION_ID_LENGTH = 16;
 const MAX_SESSION_ID_LENGTH = 200;
 const SESSION_ID_PATTERN = new RegExp(`^[a-zA-Z0-9-]{${MIN_SESSION_ID_LENGTH},${MAX_SESSION_ID_LENGTH}}$`);
+const ADMIN_PORTAL_PASSWORD = String(process.env.ADMIN_PORTAL_PASSWORD || '');
+const ADMIN_NOTIFICATION_WEBHOOK_URL = String(process.env.ADMIN_NOTIFICATION_WEBHOOK_URL || '').trim();
+const COMMUNITY_GALLERY_TABLE_SAS_URL = String(process.env.COMMUNITY_GALLERY_TABLE_SAS_URL || '').trim();
+const COMMUNITY_GALLERY_TABLE_PARTITION = String(process.env.COMMUNITY_GALLERY_TABLE_PARTITION || 'gallery').slice(0, 100);
+const COMMUNITY_GALLERY_CACHE_FILE = process.env.COMMUNITY_GALLERY_CACHE_FILE
+  || path.join(IS_TEST_RUNTIME ? os.tmpdir() : __dirname, 'community-gallery-cache.json');
+const DEBUG_COMMUNITY_UPLOAD = String(process.env.DEBUG_COMMUNITY_UPLOAD || 'true').toLowerCase() !== 'false';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const AI_TAG_GENERATION_TEMPERATURE = 0.2;
 const PROVIDER_DEFAULTS = {
   openai: {
     baseUrl: 'https://api.openai.com/v1',
@@ -112,6 +122,8 @@ Before you write a single command, sketch the full drawing in your head:
 
 const rateLimitStore = new Map();
 const sessionTokenStore = new Map();
+const communityGalleryStore = new Map();
+let communityGalleryLoaded = false;
 
 let telemetryClient = null;
 if (!IS_TEST_RUNTIME && appInsights && APPINSIGHTS_CONNECTION_STRING) {
@@ -152,6 +164,17 @@ function sanitizeProperties(properties = {}) {
   return clean;
 }
 
+function debugCommunityUpload(stage, details = {}) {
+  if (!DEBUG_COMMUNITY_UPLOAD) {
+    return;
+  }
+  // eslint-disable-next-line no-console
+  console.info('[CommunityUpload][Debug]', {
+    stage,
+    ...sanitizeProperties(details)
+  });
+}
+
 function getOperationId(req) {
   const headerValue = String(req.headers['x-correlation-id'] || '').trim();
   if (headerValue && headerValue.length <= 120) {
@@ -161,23 +184,44 @@ function getOperationId(req) {
 }
 
 function trackEvent(name, properties = {}, measurements = {}) {
+  const cleanProperties = sanitizeProperties(properties);
+  // eslint-disable-next-line no-console
+  console.info('[Telemetry][Event]', {
+    name,
+    properties: cleanProperties,
+    measurements
+  });
+
   if (!telemetryClient) {
     return;
   }
   telemetryClient.trackEvent({
     name,
-    properties: sanitizeProperties(properties),
+    properties: cleanProperties,
     measurements
   });
 }
 
 function trackException(error, properties = {}) {
-  if (!telemetryClient || !error) {
+  if (!error) {
+    return;
+  }
+
+  const cleanProperties = sanitizeProperties(properties);
+  // eslint-disable-next-line no-console
+  console.error('[Telemetry][Exception]', {
+    name: truncateValue(error.name, 120),
+    message: truncateValue(error.message, 240),
+    stack: truncateValue(error.stack, 1200),
+    properties: cleanProperties
+  });
+
+  if (!telemetryClient) {
     return;
   }
   telemetryClient.trackException({
     exception: error,
-    properties: sanitizeProperties(properties)
+    properties: cleanProperties
   });
 }
 
@@ -323,6 +367,382 @@ function normalizeProvider(rawProvider) {
 
 function trimTo(value, maxLength) {
   return String(value || '').trim().slice(0, maxLength);
+}
+
+function isValidEmail(email) {
+  return EMAIL_PATTERN.test(String(email || '').trim());
+}
+
+function normalizeTag(tag) {
+  return trimTo(tag, 32)
+    .toLowerCase()
+    .replace(/[^a-z0-9 -]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function fallbackTagsForEntry(entry) {
+  const haystack = `${entry.title} ${entry.description} ${entry.prompt}`.toLowerCase();
+  const matchedTags = [];
+  const keywordTags = [
+    ['robot', 'robot'],
+    ['house', 'house'],
+    ['tree', 'tree'],
+    ['flower', 'flower'],
+    ['star', 'star'],
+    ['sun', 'sun'],
+    ['moon', 'moon'],
+    ['cat', 'animal'],
+    ['dog', 'animal'],
+    ['bird', 'animal'],
+    ['fish', 'animal'],
+    ['car', 'vehicle'],
+    ['rocket', 'space'],
+    ['planet', 'space'],
+    ['heart', 'love'],
+    ['circle', 'shape'],
+    ['square', 'shape'],
+    ['triangle', 'shape']
+  ];
+
+  for (const [keyword, tag] of keywordTags) {
+    if (haystack.includes(keyword)) {
+      matchedTags.push(tag);
+    }
+  }
+
+  if (matchedTags.length === 0) {
+    matchedTags.push('drawing');
+  }
+
+  return Array.from(new Set(matchedTags.map(normalizeTag).filter(Boolean))).slice(0, 6);
+}
+
+function parseMaybeJson(value, fallback) {
+  if (!value) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function buildPublicGalleryEntry(entry) {
+  return {
+    id: entry.id,
+    name: entry.name,
+    prompt: entry.prompt,
+    code: entry.code,
+    title: entry.title,
+    description: entry.description,
+    explanation: entry.explanation,
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    createdAt: entry.createdAt
+  };
+}
+
+function buildAdminGalleryEntry(entry) {
+  return {
+    ...buildPublicGalleryEntry(entry),
+    email: entry.email,
+    status: entry.status,
+    reviewedAt: entry.reviewedAt || null
+  };
+}
+
+function galleryEntriesSorted() {
+  return Array.from(communityGalleryStore.values()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+function tableSasUrl(pathSuffix = '', extraQuery = {}) {
+  if (!COMMUNITY_GALLERY_TABLE_SAS_URL) {
+    return '';
+  }
+  const source = new URL(COMMUNITY_GALLERY_TABLE_SAS_URL);
+  const target = new URL(`${source.origin}${source.pathname}${pathSuffix}`);
+  for (const [key, value] of source.searchParams.entries()) {
+    target.searchParams.append(key, value);
+  }
+  for (const [key, value] of Object.entries(extraQuery)) {
+    target.searchParams.set(key, value);
+  }
+  return target.toString();
+}
+
+function escapeODataStringLiteral(value) {
+  return String(value || '').replace(/'/g, "''");
+}
+
+function tableEntityPath(partitionKey, rowKey) {
+  return `(PartitionKey='${encodeURIComponent(String(partitionKey || ''))}',RowKey='${encodeURIComponent(String(rowKey || ''))}')`;
+}
+
+function tableHeaders(contentType = 'application/json') {
+  return {
+    Accept: 'application/json;odata=nometadata',
+    'Content-Type': contentType,
+    'x-ms-date': new Date().toUTCString(),
+    'x-ms-version': '2019-02-02'
+  };
+}
+
+function cacheSnapshot() {
+  return galleryEntriesSorted().map((entry) => ({ ...entry }));
+}
+
+function writeGalleryCacheFile() {
+  try {
+    fs.writeFileSync(COMMUNITY_GALLERY_CACHE_FILE, JSON.stringify(cacheSnapshot(), null, 2), 'utf8');
+  } catch {
+    // Cache file writes are best effort.
+  }
+}
+
+function applyGalleryRows(rows) {
+  communityGalleryStore.clear();
+  for (const row of rows || []) {
+    if (!row || !row.id) {
+      continue;
+    }
+    communityGalleryStore.set(row.id, row);
+  }
+  communityGalleryLoaded = true;
+}
+
+function deserializeTableEntity(entity) {
+  const rawStatus = trimTo(entity.status || 'pending', 30).toLowerCase();
+  const status = rawStatus === 'rejected' ? 'deleted' : rawStatus;
+  return {
+    id: trimTo(entity.RowKey, 120),
+    status: status || 'pending',
+    name: trimTo(entity.name, 120),
+    email: trimTo(entity.email, 200).toLowerCase(),
+    prompt: trimTo(entity.prompt, 400),
+    code: trimTo(entity.code, 20_000),
+    title: trimTo(entity.title, 160),
+    description: trimTo(entity.description, 500),
+    explanation: trimTo(entity.explanation, 700),
+    tags: parseMaybeJson(entity.tagsJson, []),
+    createdAt: trimTo(entity.createdAt, 50),
+    reviewedAt: trimTo(entity.reviewedAt, 50) || null
+  };
+}
+
+function serializeTableEntity(entry) {
+  return {
+    PartitionKey: COMMUNITY_GALLERY_TABLE_PARTITION,
+    RowKey: entry.id,
+    status: entry.status,
+    name: entry.name,
+    email: entry.email,
+    prompt: entry.prompt,
+    code: entry.code,
+    title: entry.title,
+    description: entry.description,
+    explanation: entry.explanation,
+    tagsJson: JSON.stringify(entry.tags || []),
+    createdAt: entry.createdAt,
+    reviewedAt: entry.reviewedAt || ''
+  };
+}
+
+async function loadGalleryCache() {
+  if (communityGalleryLoaded) {
+    return;
+  }
+
+  if (COMMUNITY_GALLERY_TABLE_SAS_URL) {
+    try {
+      const url = tableSasUrl('', {
+        $filter: `PartitionKey eq '${escapeODataStringLiteral(COMMUNITY_GALLERY_TABLE_PARTITION)}'`
+      });
+      const response = await fetch(url, { headers: tableHeaders() });
+      if (response.ok) {
+        const payload = await response.json();
+        const rows = Array.isArray(payload?.value) ? payload.value.map(deserializeTableEntity) : [];
+        applyGalleryRows(rows);
+        writeGalleryCacheFile();
+        return;
+      }
+    } catch {
+      // Continue to disk cache fallback.
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(COMMUNITY_GALLERY_CACHE_FILE, 'utf8'));
+    if (Array.isArray(parsed)) {
+      applyGalleryRows(parsed.map((entry) => ({
+        ...entry,
+        tags: Array.isArray(entry.tags) ? entry.tags : []
+      })));
+      return;
+    }
+  } catch {
+    // No local cache yet.
+  }
+
+  applyGalleryRows([]);
+}
+
+async function persistGalleryEntry(entry) {
+  debugCommunityUpload('persist:start', {
+    submissionId: entry.id,
+    hasTableSas: String(Boolean(COMMUNITY_GALLERY_TABLE_SAS_URL))
+  });
+  communityGalleryStore.set(entry.id, entry);
+  writeGalleryCacheFile();
+
+  if (!COMMUNITY_GALLERY_TABLE_SAS_URL) {
+    return;
+  }
+
+  const entity = serializeTableEntity(entry);
+  const response = await fetch(tableSasUrl(), {
+    method: 'POST',
+    headers: tableHeaders(),
+    body: JSON.stringify(entity)
+  });
+  if (!response.ok) {
+    const responseText = truncateValue(await response.text().catch(() => ''), 800);
+    debugCommunityUpload('persist:table_failed', {
+      submissionId: entry.id,
+      status: String(response.status),
+      statusText: response.statusText,
+      responseText
+    });
+    throw new Error(`Could not persist gallery submission. Table status ${response.status} ${response.statusText}. ${responseText}`.trim());
+  }
+  debugCommunityUpload('persist:done', {
+    submissionId: entry.id
+  });
+}
+
+async function mergeGalleryEntry(entry) {
+  communityGalleryStore.set(entry.id, entry);
+  writeGalleryCacheFile();
+
+  if (!COMMUNITY_GALLERY_TABLE_SAS_URL) {
+    return;
+  }
+
+  const response = await fetch(tableSasUrl(tableEntityPath(COMMUNITY_GALLERY_TABLE_PARTITION, entry.id)), {
+    method: 'PUT',
+    headers: {
+      ...tableHeaders(),
+      'If-Match': '*'
+    },
+    body: JSON.stringify(serializeTableEntity(entry))
+  });
+  if (!response.ok) {
+    throw new Error('Could not update gallery submission.');
+  }
+}
+
+function adminPasswordValid(req) {
+  if (!ADMIN_PORTAL_PASSWORD) {
+    return false;
+  }
+  const headerValue = String(req.headers['x-admin-password'] || '');
+  const expected = Buffer.from(ADMIN_PORTAL_PASSWORD);
+  const actual = Buffer.from(headerValue);
+  if (expected.length !== actual.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(expected, actual);
+}
+
+async function notifyAdminSubmission(entry) {
+  if (!ADMIN_NOTIFICATION_WEBHOOK_URL) {
+    debugCommunityUpload('notify:skipped_no_webhook', {
+      submissionId: entry.id
+    });
+    return false;
+  }
+
+  const response = await fetch(ADMIN_NOTIFICATION_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event: 'community_gallery_submission',
+      submittedAt: entry.createdAt,
+      id: entry.id,
+      name: entry.name,
+      email: entry.email,
+      prompt: entry.prompt,
+      title: entry.title,
+      description: entry.description
+    })
+  });
+
+  if (!response.ok) {
+    const responseText = truncateValue(await response.text().catch(() => ''), 800);
+    debugCommunityUpload('notify:failed', {
+      submissionId: entry.id,
+      status: String(response.status),
+      statusText: response.statusText,
+      responseText
+    });
+    throw new Error(`Failed to send admin notification. Status ${response.status} ${response.statusText}. ${responseText}`.trim());
+  }
+  debugCommunityUpload('notify:done', {
+    submissionId: entry.id
+  });
+  return true;
+}
+
+async function generateTagsForEntry(entry, sessionContext) {
+  const fallback = fallbackTagsForEntry(entry);
+  const aiConfig = resolveAiConfig(sessionContext.sessionId);
+  if (!aiConfig) {
+    return fallback;
+  }
+
+  try {
+    const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${aiConfig.apiKey}`
+      },
+      body: JSON.stringify({
+        model: aiConfig.model,
+        temperature: AI_TAG_GENERATION_TEMPERATURE,
+        messages: [
+          {
+            role: 'system',
+            content: 'Return ONLY JSON: an array of 1-6 short lowercase tags (no punctuation) for a turtle drawing.'
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              title: entry.title,
+              description: entry.description,
+              prompt: entry.prompt,
+              codePreview: entry.code.slice(0, 700)
+            })
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      return fallback;
+    }
+    const payload = await response.json();
+    const content = String(payload?.choices?.[0]?.message?.content || '').trim().replace(/^```[\w]*\n?/m, '').replace(/```$/m, '');
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed)) {
+      return fallback;
+    }
+    const tags = Array.from(new Set(parsed.map(normalizeTag).filter(Boolean))).slice(0, 6);
+    return tags.length > 0 ? tags : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function normalizeBaseUrl(url, fallback) {
@@ -580,7 +1000,9 @@ function inferMimeType(filePath) {
 }
 
 function serveStaticFile(res, pathname) {
-  const target = pathname === '/' ? '/index.html' : pathname;
+  const target = pathname === '/'
+    ? '/index.html'
+    : (pathname === '/admin' ? '/admin.html' : pathname);
   const safeTarget = path.normalize(target).replace(/^([.][.][/\\])+/, '');
   const filePath = path.join(PUBLIC_DIR, safeTarget);
 
@@ -736,7 +1158,7 @@ function handleGenerate(req, res, sessionContext) {
         workflowHint: 'Suggest → Review → Edit: the AI guessed first, now try fixing the code to improve the drawing.',
         transparencyNote: aiUsed
           ? 'The AI turned your words into turtle code. You can check and change its code below.'
-          : 'This is a sample drawing. Add your own API token in the splash screen (optional).'
+          : 'This is a sample drawing.'
       }, sessionContext.responseHeaders);
     })
     .catch((error) => {
@@ -870,6 +1292,178 @@ function handleClientTelemetry(req, res, sessionContext) {
     });
 }
 
+function handleGalleryList(res, sessionContext) {
+  loadGalleryCache()
+    .then(() => {
+      const acceptedEntries = galleryEntriesSorted()
+        .filter((entry) => entry.status === 'accepted')
+        .map(buildPublicGalleryEntry);
+      jsonResponse(res, 200, {
+        items: acceptedEntries
+      }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      jsonResponse(res, 500, { error: error.message || 'Could not load gallery.' }, sessionContext.responseHeaders);
+    });
+}
+
+function handleGallerySubmission(req, res, sessionContext) {
+  readJson(req)
+    .then(async (body) => {
+      debugCommunityUpload('request:received', {
+        operationId: sessionContext.operationId,
+        sessionIdHash: crypto.createHash('sha256').update(sessionContext.sessionId).digest('hex').slice(0, 16)
+      });
+      await loadGalleryCache();
+      const name = trimTo(body.name, 120);
+      const email = trimTo(body.email, 200).toLowerCase();
+      const prompt = trimTo(body.prompt, 400);
+      const code = trimTo(body.code, 20_000);
+      const title = trimTo(body.metadata?.title, 160);
+      const description = trimTo(body.metadata?.description, 500);
+      const explanation = trimTo(body.metadata?.explanation, 700);
+
+      debugCommunityUpload('request:parsed', {
+        operationId: sessionContext.operationId,
+        nameLength: String(name.length),
+        emailDomain: email.includes('@') ? email.split('@')[1] : 'invalid',
+        promptLength: String(prompt.length),
+        codeLength: String(code.length),
+        hasMetadata: String(Boolean(body.metadata))
+      });
+
+      if (!name || !isValidEmail(email) || !prompt || !code) {
+        debugCommunityUpload('request:validation_failed', {
+          operationId: sessionContext.operationId,
+          hasName: String(Boolean(name)),
+          validEmail: String(Boolean(isValidEmail(email))),
+          hasPrompt: String(Boolean(prompt)),
+          hasCode: String(Boolean(code))
+        });
+        jsonResponse(res, 400, {
+          error: 'Please provide name, valid email, prompt, and code.'
+        }, sessionContext.responseHeaders);
+        return;
+      }
+
+      const createdAt = new Date().toISOString();
+      const entry = {
+        id: createSessionId(),
+        status: 'pending',
+        name,
+        email,
+        prompt,
+        code,
+        title: title || 'Community submission',
+        description,
+        explanation,
+        tags: [],
+        createdAt,
+        reviewedAt: null
+      };
+
+      debugCommunityUpload('request:entry_created', {
+        operationId: sessionContext.operationId,
+        submissionId: entry.id,
+        status: entry.status
+      });
+
+      await persistGalleryEntry(entry);
+      let adminNotified = false;
+      let notificationError = '';
+      try {
+        adminNotified = await notifyAdminSubmission(entry);
+      } catch (error) {
+        debugCommunityUpload('notify:error', {
+          operationId: sessionContext.operationId,
+          submissionId: entry.id,
+          error: error.message || 'unknown'
+        });
+        notificationError = 'Submission saved, but notification delivery failed.';
+      }
+
+      debugCommunityUpload('request:success', {
+        operationId: sessionContext.operationId,
+        submissionId: entry.id,
+        adminNotified: String(adminNotified)
+      });
+
+      jsonResponse(res, 201, {
+        ok: true,
+        id: entry.id,
+        status: entry.status,
+        adminNotified,
+        notificationError: notificationError || undefined
+      }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      debugCommunityUpload('request:error', {
+        operationId: sessionContext.operationId,
+        error: error.message || 'unknown',
+        stack: truncateValue(error.stack, 1200)
+      });
+      jsonResponse(res, 400, { error: error.message || 'Could not save submission.' }, sessionContext.responseHeaders);
+    });
+}
+
+function handleAdminList(req, res, sessionContext) {
+  if (!adminPasswordValid(req)) {
+    jsonResponse(res, 401, { error: 'Unauthorized.' }, sessionContext.responseHeaders);
+    return;
+  }
+  loadGalleryCache()
+    .then(() => {
+      jsonResponse(res, 200, {
+        items: galleryEntriesSorted()
+          .filter((entry) => entry.status !== 'deleted' && entry.status !== 'rejected')
+          .map(buildAdminGalleryEntry)
+      }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      jsonResponse(res, 500, { error: error.message || 'Could not load submissions.' }, sessionContext.responseHeaders);
+    });
+}
+
+function handleAdminDecision(req, res, sessionContext, entryId) {
+  if (!adminPasswordValid(req)) {
+    jsonResponse(res, 401, { error: 'Unauthorized.' }, sessionContext.responseHeaders);
+    return;
+  }
+
+  readJson(req)
+    .then(async (body) => {
+      await loadGalleryCache();
+      const decision = trimTo(body.decision || body.status, 20).toLowerCase();
+      if (decision !== 'accept' && decision !== 'reject' && decision !== 'accepted' && decision !== 'rejected' && decision !== 'delete' && decision !== 'deleted') {
+        jsonResponse(res, 400, { error: 'Decision must be accept or reject.' }, sessionContext.responseHeaders);
+        return;
+      }
+
+      const target = communityGalleryStore.get(entryId);
+      if (!target) {
+        jsonResponse(res, 404, { error: 'Submission not found.' }, sessionContext.responseHeaders);
+        return;
+      }
+
+      target.status = decision.startsWith('accept') ? 'accepted' : 'deleted';
+      if (target.status === 'accepted') {
+        target.tags = await generateTagsForEntry(target, sessionContext);
+      } else {
+        target.tags = [];
+      }
+      target.reviewedAt = new Date().toISOString();
+      await mergeGalleryEntry(target);
+
+      jsonResponse(res, 200, {
+        ok: true,
+        item: buildAdminGalleryEntry(target)
+      }, sessionContext.responseHeaders);
+    })
+    .catch((error) => {
+      jsonResponse(res, 400, { error: error.message || 'Could not update submission.' }, sessionContext.responseHeaders);
+    });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const operationId = getOperationId(req);
@@ -922,6 +1516,27 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/gallery') {
+    handleGalleryList(res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/gallery/submissions') {
+    handleGallerySubmission(req, res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/admin/submissions') {
+    handleAdminList(req, res, sessionContext);
+    return;
+  }
+
+  if (req.method === 'POST' && /^\/api\/admin\/submissions\/[^/]+\/decision$/.test(url.pathname)) {
+    const [, , , , entryId] = url.pathname.split('/');
+    handleAdminDecision(req, res, sessionContext, decodeURIComponent(entryId || ''));
+    return;
+  }
+
   if (req.method === 'GET') {
     serveStaticFile(res, url.pathname);
     return;
@@ -931,6 +1546,9 @@ const server = http.createServer((req, res) => {
 });
 
 if (require.main === module) {
+  loadGalleryCache().catch(() => {
+    // Cache warmup is best effort.
+  });
   server.listen(PORT, HOST, () => {
     // eslint-disable-next-line no-console
     console.log(`Turtle Flow AI server running at http://${HOST}:${PORT}`);

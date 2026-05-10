@@ -70,8 +70,7 @@
 
         <section id="token-step-2" class="token-step" aria-labelledby="token-step-2-heading" hidden>
           <h3 id="token-step-2-heading">Step 2</h3>
-          <p class="token-step-help">Get an API key for <strong id="token-provider-summary">OpenAI</strong>, then paste it below.</p>
-          <a id="get-token-link" class="token-link" href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Get an API key</a>
+          <p class="token-step-help"><a id="get-token-link" class="token-link" href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noreferrer">Get an API key</a> for <strong id="token-provider-summary">OpenAI</strong>, then paste it below.</p>
           <label for="token-input">API key</label>
           <input id="token-input" type="password" autocomplete="off" placeholder="Paste API key" />
           <div id="token-model-field" class="token-field" hidden>
@@ -84,7 +83,7 @@
           </div>
           <div class="button-row token-step-actions">
             <button id="token-back-button" type="button" class="secondary-button">Back</button>
-            <button id="save-token-button" type="submit">Use My API Key</button>
+            <button id="save-token-button" type="submit">Continue</button>
           </div>
         </section>
       </form>
@@ -107,6 +106,10 @@
           <div class="canvas-wrapper">
             <canvas id="turtle-canvas" width="800" height="600" aria-label="Turtle drawing output"></canvas>
             <canvas id="turtle-sprite-canvas" width="800" height="600" aria-hidden="true"></canvas>
+            <div id="explain-loading" hidden>
+              <span class="explain-spinner" aria-hidden="true"></span>
+              <p>Generating your drawing&hellip;</p>
+            </div>
           </div>
           <div class="button-row">
             <button id="replay-button" type="button">Replay</button>
@@ -142,18 +145,14 @@
         <section class="panel explain-panel" aria-label="Explain panel">
           <div class="tab-header">
             <div class="tab-buttons">
-              <button id="explain-tab-button" type="button" class="tab-button active" aria-selected="true" aria-controls="explain-tab-content">Explain</button>
-              <button id="saved-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="saved-tab-content">Saved</button>
-              <button id="debug-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="debug-tab-content">AI Debug</button>
+                <button id="explain-tab-button" type="button" class="tab-button active" aria-selected="true" aria-controls="explain-tab-content">Explain</button>
+                <button id="saved-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="saved-tab-content">Saved</button>
+                <button id="debug-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="debug-tab-content">AI Debug</button>
+                <button id="community-tab-button" type="button" class="tab-button" aria-selected="false" aria-controls="community-tab-content">Community</button>
+              </div>
             </div>
-          </div>
 
           <div id="explain-tab-content" class="tab-content active">
-            <div id="explain-loading" hidden>
-              <span class="explain-spinner" aria-hidden="true"></span>
-              <p>Generating your drawing&hellip;</p>
-            </div>
-
             <div id="explain-error" hidden>
               <p id="explain-error-message" class="explain-error-message" aria-live="assertive"></p>
               <div class="button-row">
@@ -188,6 +187,22 @@
             <div id="debug-log" class="debug-log" aria-live="polite">
               <p class="debug-empty">AI debug log will appear here as requests are made.</p>
             </div>
+          </div>
+
+          <div id="community-tab-content" class="tab-content">
+            <p class="panel-subtitle">Submit your drawing for admin review and browse approved community artwork.</p>
+            <form id="community-submit-form" class="community-submit-form">
+              <label for="community-name">Your name</label>
+              <input id="community-name" type="text" maxlength="120" required />
+              <label for="community-email">Your email (for submission admin only, no newsletters etc)</label>
+              <input id="community-email" type="email" maxlength="200" required />
+              <div class="button-row">
+                <button id="community-submit-button" type="submit">Submit Current Drawing</button>
+                <button id="community-refresh-button" type="button" class="secondary-button">Refresh Gallery</button>
+              </div>
+            </form>
+            <p id="community-submit-status" class="token-status" aria-live="polite"></p>
+            <div id="community-gallery-list" class="community-gallery-list"></div>
           </div>
         </section>
       </main>
@@ -281,8 +296,10 @@
     <script type="module" src="/app.js"></script>
     <footer class="credit-footer">
       <span>
-        made with ❤️ by Felix, Jasper and Keith -
+        made with ❤️ by Felix, Jasper &amp; Keith -
         <a href="https://turtleflow.ai" target="_blank" rel="noreferrer">turtleflow.ai</a>
+        |
+        <a href="https://github.com/keithl8041/turtlelab" target="_blank" rel="noreferrer">GitHub</a>
       </span>
     </footer>
   </body>

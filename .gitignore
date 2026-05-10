@@ -58,3 +58,5 @@ nunit-*.xml
 node_modules/
 coverage/
 dist/
+
+community-gallery-cache.json
