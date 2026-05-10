@@ -419,6 +419,33 @@ button:disabled {
   min-height: 1.2rem;
 }
 
+#code-error:not(:empty) {
+  background: #fef2f2;
+  border-left: 4px solid #ef4444;
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.code-error-line,
+.code-active-line {
+  display: block;
+  border-radius: 2px;
+  margin: 0 -0.75rem;
+  padding: 0 0.75rem;
+}
+
+.code-error-line {
+  background: rgba(239, 68, 68, 0.13);
+  outline: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.code-active-line {
+  background: rgba(234, 179, 8, 0.2);
+  outline: 1px solid rgba(234, 179, 8, 0.5);
+}
+
 .ai-overview {
   margin-top: 0.25rem;
   margin-bottom: 0.5rem;
@@ -860,5 +887,162 @@ button:disabled {
   .intro-lead,
   .intro-body {
     font-size: 0.95rem;
+  }
+}
+
+/* ── Code-panel header with help button ─────────────────────────────── */
+.code-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+.code-panel-header h2 {
+  margin: 0 0 0.25rem;
+}
+
+.code-panel-header .panel-subtitle {
+  margin: 0;
+}
+
+.help-button {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  min-height: unset;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  margin-top: 0.15rem;
+  box-shadow: none;
+  background: rgba(99, 102, 241, 0.12);
+  color: #4f46e5;
+  border: 1.5px solid rgba(99, 102, 241, 0.3);
+}
+
+.help-button:hover {
+  background: rgba(99, 102, 241, 0.22);
+  filter: none;
+}
+
+/* ── Help modal ────────────────────────────────────────────────────── */
+.help-modal {
+  border: none;
+  border-radius: 0.85rem;
+  width: min(760px, calc(100vw - 2rem));
+  max-width: 100%;
+  max-height: min(90dvh, 90vh);
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+
+.help-modal::backdrop {
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.help-modal-inner {
+  overflow-y: auto;
+  max-height: inherit;
+  padding: 1.25rem 1.25rem 1.5rem;
+}
+
+.help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.help-header h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.help-subtitle {
+  margin: 0 0 1rem;
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.help-section-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6366f1;
+}
+
+.help-list {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.help-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.help-item dt {
+  flex-shrink: 0;
+  min-width: 150px;
+}
+
+.help-item dt code {
+  font-family: "Fira Code", "Consolas", monospace;
+  font-size: 0.83rem;
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  color: #111827;
+}
+
+.help-item dd {
+  margin: 0;
+  color: #374151;
+}
+
+.help-note {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.help-example {
+  margin: 0.65rem 0 0;
+  background: #f3f4f6;
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  font-family: "Fira Code", "Consolas", monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #1f2937;
+}
+
+@media (max-width: 480px) {
+  .help-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .help-item dt {
+    min-width: 130px;
   }
 }

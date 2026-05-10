@@ -1,3 +1,5 @@
+import { parseDisplayCode, explainProgram } from './turtle-program-client.js';
+
 const EXAMPLE_PROMPTS = [
   'draw a happy robot',
   'draw a house and a tree',
@@ -224,6 +226,9 @@ const restoreButton = document.querySelector('#restore-button');
 const copyButton = document.querySelector('#copy-button');
 const saveProjectButton = document.querySelector('#save-project-button');
 const codeError = document.querySelector('#code-error');
+const helpButton = document.querySelector('#help-button');
+const helpModal = document.querySelector('#help-modal');
+const closeHelpButton = document.querySelector('#close-help-button');
 
 const transparencyNote = document.querySelector('#transparency-note');
 const sessionNotice = document.querySelector('#session-notice');
@@ -266,6 +271,8 @@ const state = {
   animationRaf: null,
   isGenerating: false,
   typingAnimation: null,
+  lintErrorLines: new Set(),
+  activeExecutionLine: null,
   tokenModalStep: 1
 };
 
@@ -541,19 +548,53 @@ function escapeHtml(text) {
 
 function syncHighlight() {
   const lines = codeEditor.value.split('\n');
-  const html = lines.map((line) => {
-    if (/^\s*#/.test(line)) {
-      return `<span class="code-comment">${escapeHtml(line)}</span>`;
+  const html = lines.map((line, index) => {
+    const lineNumber = index + 1;
+    const escapedLine = escapeHtml(line);
+    const isErrorLine = state.lintErrorLines.has(lineNumber);
+    const isActiveLine = state.activeExecutionLine === lineNumber;
+
+    let content = /^\s*#/.test(line)
+      ? `<span class="code-comment">${escapedLine}</span>`
+      : escapedLine;
+
+    if (isActiveLine) {
+      content = `<span class="code-active-line">${content}</span>`;
+    } else if (isErrorLine) {
+      content = `<span class="code-error-line">${content}</span>`;
     }
-    return escapeHtml(line);
+    return content;
   }).join('\n');
   codeHighlight.innerHTML = html;
 }
 
-codeEditor.addEventListener('input', syncHighlight);
+codeEditor.addEventListener('input', () => {
+  clearLintErrors();
+  syncHighlight();
+});
 codeEditor.addEventListener('scroll', () => {
   codeHighlight.scrollTop = codeEditor.scrollTop;
 });
+
+function clearLintErrors() {
+  state.lintErrorLines.clear();
+  codeError.textContent = '';
+}
+
+function showLintError(error) {
+  state.lintErrorLines.clear();
+  if (error.line) {
+    state.lintErrorLines.add(error.line);
+  }
+  syncHighlight();
+
+  const prefix = error.line ? `Line ${error.line}: ` : '';
+  codeError.textContent = `🐢 Oops! ${prefix}${error.message}`;
+
+  if (error.line) {
+    highlightLine(error.line);
+  }
+}
 
 function getSavedHistory() {
   try {
@@ -661,9 +702,9 @@ function renderSavedProjects() {
     button.className = 'saved-project-button';
     const title = project.name || project.prompt || 'Saved drawing';
     button.textContent = title.length > 40 ? `${title.slice(0, 37)}...` : title;
-    button.addEventListener('click', async () => {
+    button.addEventListener('click', () => {
       applySavedProject(project);
-      await runEditedCode();
+      runEditedCode();
     });
     savedProjects.append(button);
   }
@@ -713,6 +754,26 @@ function closePromptModal() {
     }
   } else {
     promptModal.removeAttribute('open');
+  }
+}
+
+function openHelpModal() {
+  if (typeof helpModal.showModal === 'function') {
+    if (!helpModal.open) {
+      helpModal.showModal();
+    }
+  } else {
+    helpModal.setAttribute('open', 'open');
+  }
+}
+
+function closeHelpModal() {
+  if (typeof helpModal.close === 'function') {
+    if (helpModal.open) {
+      helpModal.close();
+    }
+  } else {
+    helpModal.removeAttribute('open');
   }
 }
 
@@ -1355,6 +1416,10 @@ function stopAnimation() {
     cancelAnimationFrame(state.animationRaf);
     state.animationRaf = null;
   }
+  if (state.activeExecutionLine !== null) {
+    state.activeExecutionLine = null;
+    syncHighlight();
+  }
 }
 
 function renderProgram(program, executionPlan = [], animate = true) {
@@ -1393,7 +1458,10 @@ function renderProgram(program, executionPlan = [], animate = true) {
   const step = () => {
     const command = executionPlan[index];
     if (!command) {
-      // Drawing is complete, make the turtle disappear in a puff of smoke
+      // Drawing is complete — clear the active-line highlight
+      state.activeExecutionLine = null;
+      syncHighlight();
+      // Make the turtle disappear in a puff of smoke
       if (index > 0) {
         smokePuffAndVanish(toCanvasX(turtle.x), toCanvasY(turtle.y), () => {
           // Animation complete, nothing more to do
@@ -1407,6 +1475,11 @@ function renderProgram(program, executionPlan = [], animate = true) {
     const prevHeading = turtle.heading;
 
     runSingleCommand(command, turtle);
+    // Update the overlay to show which line is currently executing
+    if (command.line !== null) {
+      state.activeExecutionLine = command.line;
+      syncHighlight();
+    }
     highlightLine(command.line);
     index += 1;
 
@@ -1468,7 +1541,7 @@ async function doGenerate() {
     return;
   }
 
-  codeError.textContent = '';
+  clearLintErrors();
   cancelTypingAnimation();
   closePromptModal();
   switchToTab('explain');
@@ -1492,7 +1565,7 @@ async function doGenerate() {
         suggestions: []
       });
 
-      await runEditedCode();
+      runEditedCode();
       return;
     }
 
@@ -1562,39 +1635,34 @@ async function generateFromPrompt(event) {
   await doGenerate();
 }
 
-async function runEditedCode() {
-  codeError.textContent = '';
+function runEditedCode() {
+  clearLintErrors();
 
-  try {
-    const response = await apiFetch('/api/validate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: codeEditor.value })
-    }, { flow: 'validate' });
+  const result = parseDisplayCode(codeEditor.value);
 
-    const payload = await response.json();
-
-    if (!payload.valid) {
-      const firstError = payload.errors?.[0];
-      const prefix = firstError?.line ? `Line ${firstError.line}: ` : '';
-      throw new Error(`${prefix}${firstError?.message || 'That code has a small mistake.'}`);
-    }
-
-    state.currentProgram = payload.program;
-    state.currentPlan = payload.executionPlan || flattenCommands(payload.program.commands);
-    state.currentCode = codeEditor.value;
-    aiOverview.textContent = payload.program.explanation;
-
-    renderProgram(payload.program, state.currentPlan, animateToggle.checked);
-    saveDraftProject();
-
-      updateElementVisibility(aiOverview);
-  } catch (error) {
-    emitClientTelemetry('validate_exception', {
-      message: normalizeErrorMessage(error)
+  if (!result.valid) {
+    const firstError = result.errors?.[0] || { message: 'That code has a small mistake.' };
+    emitClientTelemetry('validate_lint_error', {
+      message: normalizeErrorMessage({ message: firstError.message })
     });
-    codeError.textContent = error.message;
+    showLintError(firstError);
+    return;
   }
+
+  const program = {
+    ...result.program,
+    explanation: explainProgram(result.program)
+  };
+
+  state.currentProgram = program;
+  state.currentPlan = result.executionPlan || flattenCommands(program.commands);
+  state.currentCode = codeEditor.value;
+  aiOverview.textContent = program.explanation;
+
+  renderProgram(program, state.currentPlan, animateToggle.checked);
+  saveDraftProject();
+
+  updateElementVisibility(aiOverview);
 }
 
 function restoreAiCode() {
@@ -1689,6 +1757,15 @@ savedTabButton.addEventListener('click', () => switchToTab('saved'));
 debugTabButton.addEventListener('click', () => switchToTab('debug'));
 clearDebugButton.addEventListener('click', clearDebugLog);
 explainRetryButton.addEventListener('click', doGenerate);
+
+helpButton.addEventListener('click', openHelpModal);
+closeHelpButton.addEventListener('click', closeHelpModal);
+helpModal.addEventListener('click', (event) => {
+  // Close when clicking the backdrop (outside the inner content)
+  if (event.target === helpModal) {
+    closeHelpModal();
+  }
+});
 
 syncProviderDefaults();
 setTokenModalStep(1);

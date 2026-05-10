@@ -119,8 +119,13 @@
         </section>
 
         <section class="panel code-panel" aria-labelledby="code-title">
-          <h2 id="code-title">Code</h2>
-          <p class="panel-subtitle">Review the AI code, then edit it to make it better.</p>
+          <div class="code-panel-header">
+            <div>
+              <h2 id="code-title">Code</h2>
+              <p class="panel-subtitle">Review the AI code, then edit it to make it better.</p>
+            </div>
+            <button id="help-button" type="button" class="help-button" aria-label="Command reference" title="Show command help">?</button>
+          </div>
           <div class="code-editor-wrapper">
             <pre id="code-highlight" aria-hidden="true"></pre>
             <textarea id="code-editor" rows="18" spellcheck="false" aria-labelledby="code-title"></textarea>
@@ -208,6 +213,69 @@
         </div>
         <div class="chip-list" id="chip-list"></div>
       </form>
+    </dialog>
+
+    <dialog id="help-modal" class="help-modal" aria-labelledby="help-title">
+      <div class="help-modal-inner">
+        <div class="help-header">
+          <h2 id="help-title">🐢 Commands</h2>
+          <button id="close-help-button" type="button" class="secondary-button">Close</button>
+        </div>
+        <p class="help-subtitle">Type these in the Code window, one per line.</p>
+        <div class="help-grid">
+          <section class="help-section">
+            <h3 class="help-section-title">Moving</h3>
+            <dl class="help-list">
+              <div class="help-item"><dt><code>forward(n)</code></dt><dd>Move forward <em>n</em> steps (1–500)</dd></div>
+              <div class="help-item"><dt><code>backward(n)</code></dt><dd>Move backward <em>n</em> steps (1–500)</dd></div>
+              <div class="help-item"><dt><code>goto(x, y)</code></dt><dd>Jump to position <em>x</em>, <em>y</em> on the canvas</dd></div>
+              <div class="help-item"><dt><code>home()</code></dt><dd>Go back to the centre of the canvas</dd></div>
+            </dl>
+          </section>
+          <section class="help-section">
+            <h3 class="help-section-title">Turning</h3>
+            <dl class="help-list">
+              <div class="help-item"><dt><code>left(deg)</code></dt><dd>Turn left by <em>deg</em> degrees</dd></div>
+              <div class="help-item"><dt><code>right(deg)</code></dt><dd>Turn right by <em>deg</em> degrees</dd></div>
+              <div class="help-item"><dt><code>setheading(deg)</code></dt><dd>Point in a fixed direction (0 = right, 90 = up)</dd></div>
+            </dl>
+          </section>
+          <section class="help-section">
+            <h3 class="help-section-title">Drawing</h3>
+            <dl class="help-list">
+              <div class="help-item"><dt><code>penup()</code></dt><dd>Lift the pen — moving won't draw</dd></div>
+              <div class="help-item"><dt><code>pendown()</code></dt><dd>Put the pen down — moving draws a line</dd></div>
+              <div class="help-item"><dt><code>pensize(n)</code></dt><dd>Set line thickness to <em>n</em> pixels</dd></div>
+              <div class="help-item"><dt><code>circle(r)</code></dt><dd>Draw a circle with radius <em>r</em> (max 300)</dd></div>
+              <div class="help-item"><dt><code>dot(d)</code></dt><dd>Draw a filled dot of diameter <em>d</em></dd></div>
+              <div class="help-item"><dt><code>clear()</code></dt><dd>Wipe the canvas clean</dd></div>
+            </dl>
+          </section>
+          <section class="help-section">
+            <h3 class="help-section-title">Colour &amp; Fill</h3>
+            <dl class="help-list">
+              <div class="help-item"><dt><code>color("name")</code></dt><dd>Set colour — use a name or <code>#rrggbb</code></dd></div>
+              <div class="help-item"><dt><code>beginfill()</code></dt><dd>Start filling the next shape</dd></div>
+              <div class="help-item"><dt><code>endfill()</code></dt><dd>Finish filling the shape</dd></div>
+            </dl>
+            <p class="help-note">Colour names: black, white, red, green, blue, yellow, orange, purple, pink, brown, gray</p>
+          </section>
+          <section class="help-section">
+            <h3 class="help-section-title">Repeat &amp; Comments</h3>
+            <dl class="help-list">
+              <div class="help-item">
+                <dt><code>repeat(n) {&nbsp;&hellip;&nbsp;}</code></dt>
+                <dd>Run the commands inside <em>n</em> times (1–50)</dd>
+              </div>
+              <div class="help-item"><dt><code># your note</code></dt><dd>A comment — ignored by the turtle</dd></div>
+            </dl>
+            <pre class="help-example">repeat(4) {
+  forward(100)
+  right(90)
+}</pre>
+          </section>
+        </div>
+      </div>
     </dialog>
 
     <script type="module" src="/app.js"></script>
