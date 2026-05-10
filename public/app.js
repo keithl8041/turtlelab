@@ -182,9 +182,24 @@ const introPage = document.querySelector('#intro-page');
 const introStartButton = document.querySelector('#intro-start-button');
 const studio = document.querySelector('#studio');
 const promptModal = document.querySelector('#prompt-modal');
+const tokenModal = document.querySelector('#token-modal');
+const openTokenModalButton = document.querySelector('#open-token-modal-button');
+const closeTokenModalButton = document.querySelector('#close-token-modal-button');
 const tokenForm = document.querySelector('#token-form');
+const tokenStepLabel = document.querySelector('#token-step-label');
+const tokenStepTitle = document.querySelector('#token-step-title');
+const tokenStepIndicator1 = document.querySelector('#token-step-indicator-1');
+const tokenStepIndicator2 = document.querySelector('#token-step-indicator-2');
+const tokenStep1 = document.querySelector('#token-step-1');
+const tokenStep2 = document.querySelector('#token-step-2');
+const tokenNextButton = document.querySelector('#token-next-button');
+const tokenBackButton = document.querySelector('#token-back-button');
 const tokenProvider = document.querySelector('#token-provider');
+const tokenProviderSummary = document.querySelector('#token-provider-summary');
 const tokenInput = document.querySelector('#token-input');
+const tokenModelField = document.querySelector('#token-model-field');
+const tokenModel = document.querySelector('#token-model');
+const tokenBaseUrlField = document.querySelector('#token-base-url-field');
 const tokenBaseUrl = document.querySelector('#token-base-url');
 const getTokenLink = document.querySelector('#get-token-link');
 const tokenStatus = document.querySelector('#token-status');
@@ -257,7 +272,8 @@ const state = {
   isGenerating: false,
   typingAnimation: null,
   lintErrorLines: new Set(),
-  activeExecutionLine: null
+  activeExecutionLine: null,
+  tokenModalStep: 1
 };
 
 function addDebugLogEntry(message, type = 'info', data = null) {
@@ -761,6 +777,35 @@ function closeHelpModal() {
   }
 }
 
+function openTokenModal(step = 1) {
+  setTokenModalStep(step);
+  if (typeof tokenModal.showModal === 'function') {
+    if (!tokenModal.open) {
+      tokenModal.showModal();
+    }
+  } else {
+    tokenModal.setAttribute('open', 'open');
+  }
+
+  window.requestAnimationFrame(() => {
+    if (state.tokenModalStep === 1) {
+      tokenProvider.focus();
+      return;
+    }
+    tokenInput.focus();
+  });
+}
+
+function closeTokenModal() {
+  if (typeof tokenModal.close === 'function') {
+    if (tokenModal.open) {
+      tokenModal.close();
+    }
+  } else {
+    tokenModal.removeAttribute('open');
+  }
+}
+
 function enterIntroPage() {
   studio.hidden = true;
   introPage.hidden = false;
@@ -789,6 +834,16 @@ function setAiConnectionBadge(status) {
 
 function selectedProviderTokenUrl(provider) {
   return PROVIDER_TOKEN_URLS[provider] || '';
+}
+
+function providerDisplayName(provider) {
+  const names = {
+    openai: 'OpenAI',
+    anthropic: 'Anthropic',
+    gemini: 'Gemini',
+    custom: 'your custom provider'
+  };
+  return names[provider] || 'your provider';
 }
 
 function setProviderHelpLink(provider) {
@@ -829,7 +884,8 @@ function setTokenStatusUi(status) {
   setProviderHelpLink(status.provider || tokenProvider.value || 'openai');
 
   if (status.hasToken) {
-    tokenStatus.textContent = `Using ${status.provider} API key in this session with the app default model.`;
+    const modelText = status.model ? ` using model ${status.model}.` : ' with the app default model.';
+    tokenStatus.textContent = `Using ${status.provider} API key in this session${modelText}`;
   } else if (status.serverFallbackAvailable) {
     tokenStatus.textContent = 'No personal API key set. The app can still use a server default key.';
   } else {
@@ -837,11 +893,41 @@ function setTokenStatusUi(status) {
   }
 }
 
+function isCustomProvider(provider = tokenProvider.value) {
+  return String(provider || '').toLowerCase() === 'custom';
+}
+
+function syncProviderSpecificFields(provider = tokenProvider.value) {
+  const customProvider = isCustomProvider(provider);
+  tokenModelField.hidden = !customProvider;
+  tokenBaseUrlField.hidden = !customProvider;
+  tokenModel.disabled = !customProvider;
+  tokenBaseUrl.disabled = !customProvider;
+  tokenProviderSummary.textContent = providerDisplayName(provider);
+
+  if (!customProvider) {
+    tokenModel.value = '';
+    tokenBaseUrl.value = '';
+  }
+}
+
+function setTokenModalStep(step) {
+  const normalizedStep = step === 2 ? 2 : 1;
+  state.tokenModalStep = normalizedStep;
+  tokenStep1.hidden = normalizedStep !== 1;
+  tokenStep2.hidden = normalizedStep !== 2;
+  tokenStepIndicator1.classList.toggle('active', normalizedStep === 1);
+  tokenStepIndicator2.classList.toggle('active', normalizedStep === 2);
+  tokenStepLabel.textContent = `Step ${normalizedStep} of 2`;
+  tokenStepTitle.textContent = normalizedStep === 1 ? 'Choose a provider' : 'Get your API key';
+}
+
 function syncProviderDefaults() {
   const provider = tokenProvider.value || 'openai';
-  if (!tokenBaseUrl.value) {
+  if (isCustomProvider(provider) && !tokenBaseUrl.value) {
     tokenBaseUrl.value = PROVIDER_BASE_URLS[provider] || '';
   }
+  syncProviderSpecificFields(provider);
   setProviderHelpLink(provider);
 }
 
@@ -853,7 +939,7 @@ async function readJsonSafe(response) {
   }
 }
 
-async function refreshTokenStatus() {
+async function refreshTokenStatus({ bypassIntroOnToken = false } = {}) {
   const response = await apiFetch('/api/session/token-status', {}, { flow: 'token-status' });
   const payload = await readJsonSafe(response);
   if (!response.ok) {
@@ -869,6 +955,11 @@ async function refreshTokenStatus() {
     serverFallbackAvailable: String(Boolean(payload.serverFallbackAvailable))
   });
   setTokenStatusUi(payload);
+
+  if (bypassIntroOnToken && payload.hasToken) {
+    closeTokenModal();
+    enterStudio();
+  }
 }
 
 async function saveSessionToken(event) {
@@ -884,7 +975,8 @@ async function saveSessionToken(event) {
     body: JSON.stringify({
       provider: tokenProvider.value,
       token: tokenInput.value,
-      baseUrl: tokenBaseUrl.value
+      baseUrl: isCustomProvider() ? tokenBaseUrl.value : '',
+      model: isCustomProvider() ? tokenModel.value : ''
     })
   }, { flow: 'token-save' });
   const payload = await readJsonSafe(response);
@@ -903,7 +995,11 @@ async function saveSessionToken(event) {
   });
 
   tokenInput.value = '';
+  tokenModel.value = '';
+  tokenBaseUrl.value = '';
   setSessionNotice('');
+  closeTokenModal();
+  setTokenModalStep(1);
   await refreshTokenStatus();
   enterStudio({ openPrompt: true });
 }
@@ -1598,8 +1694,15 @@ function setupPromptChips() {
 }
 
 tokenProvider.addEventListener('change', () => {
-  tokenBaseUrl.value = '';
   syncProviderDefaults();
+});
+tokenNextButton.addEventListener('click', () => {
+  setTokenModalStep(2);
+  tokenInput.focus();
+});
+tokenBackButton.addEventListener('click', () => {
+  setTokenModalStep(1);
+  tokenProvider.focus();
 });
 tokenForm.addEventListener('submit', async (event) => {
   try {
@@ -1609,8 +1712,12 @@ tokenForm.addEventListener('submit', async (event) => {
   }
 });
 aiConnectionBadge.addEventListener('click', () => {
-  enterIntroPage();
+  openTokenModal(1);
 });
+openTokenModalButton.addEventListener('click', () => {
+  openTokenModal(1);
+});
+closeTokenModalButton.addEventListener('click', closeTokenModal);
 logoutButton.addEventListener('click', async () => {
   try {
     await removeSessionToken();
@@ -1620,9 +1727,11 @@ logoutButton.addEventListener('click', async () => {
     setSessionNotice(error.message);
   }
 });
-introStartButton.addEventListener('click', () => {
-  enterStudio({ openPrompt: true });
-});
+if (introStartButton) {
+  introStartButton.addEventListener('click', () => {
+    enterStudio({ openPrompt: true });
+  });
+}
 skipSplashButton.addEventListener('click', () => {
   enterStudio({ openPrompt: true });
 });
@@ -1659,7 +1768,8 @@ helpModal.addEventListener('click', (event) => {
 });
 
 syncProviderDefaults();
-refreshTokenStatus().catch(() => {
+setTokenModalStep(1);
+refreshTokenStatus({ bypassIntroOnToken: true }).catch(() => {
   setTokenStatusUi({ hasToken: false, serverFallbackAvailable: false, provider: null });
 });
 emitClientTelemetry('client_app_loaded');
