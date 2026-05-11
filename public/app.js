@@ -286,6 +286,8 @@ const state = {
   activeExecutionLine: null,
   tokenModalStep: 1,
   hasToken: false,
+  hasSeenSessionToken: false,
+  lastSessionTokenProvider: null,
   serverFallbackAvailable: false,
   communityGalleryItems: [],
   communityGalleryPage: 0
@@ -935,13 +937,14 @@ async function refreshCommunityGallery() {
 async function submitCommunityDrawing(event) {
   event.preventDefault();
   communitySubmitStatus.textContent = '';
-  
-  // Check if user has API access
-  if (!state.hasToken && !state.serverFallbackAvailable) {
-    communitySubmitStatus.textContent = 'You need to set up an API key to submit drawings. Please add an API key in the AI setup panel.';
+
+  const accessCheck = await ensureAiAccessForInteraction();
+  if (!accessCheck.ok) {
+    communitySubmitStatus.textContent = accessCheck.message;
+    openTokenModal(1);
     return;
   }
-  
+
   const metadata = {
     title: explainTitleEl.textContent || 'Community drawing',
     description: explainDescriptionEl.textContent || '',
@@ -1148,6 +1151,11 @@ function setTokenStatusUi(status) {
   state.serverFallbackAvailable = Boolean(status.serverFallbackAvailable);
 
   if (status.hasToken) {
+    state.hasSeenSessionToken = true;
+    state.lastSessionTokenProvider = status.provider || state.lastSessionTokenProvider || tokenProvider.value || 'openai';
+  }
+
+  if (status.hasToken) {
     const modelText = status.model ? ` using model ${status.model}.` : ' with the app default model.';
     tokenStatus.textContent = `Using ${status.provider} API key in this session${modelText}`;
   } else if (status.serverFallbackAvailable) {
@@ -1158,6 +1166,30 @@ function setTokenStatusUi(status) {
   
   // Update API-gated UI based on token availability
   updateApiGatedUi(Boolean(status.hasToken) || Boolean(status.serverFallbackAvailable));
+}
+
+async function ensureAiAccessForInteraction() {
+  const hadSessionTokenBefore = state.hasSeenSessionToken;
+
+  await refreshTokenStatus();
+
+  if (state.hasToken || state.serverFallbackAvailable) {
+    return { ok: true, message: '' };
+  }
+
+  const provider = state.lastSessionTokenProvider || tokenProvider.value || 'openai';
+  const tokenUrl = selectedProviderTokenUrl(provider);
+
+  if (hadSessionTokenBefore) {
+    const message = 'Your session API key expired after 6 hours. Please add your API key again to continue.';
+    setSessionNotice(message, tokenUrl);
+    return { ok: false, message };
+  }
+
+  return {
+    ok: false,
+    message: 'You need to set up an API key to continue. Please add an API key in the AI setup panel.'
+  };
 }
 
 function isCustomProvider(provider = tokenProvider.value) {
@@ -1286,6 +1318,8 @@ async function removeSessionToken() {
     throw new Error(payload.error || 'Could not remove token.');
   }
   emitClientTelemetry('token_logout_succeeded', { provider });
+  state.hasSeenSessionToken = false;
+  state.lastSessionTokenProvider = provider;
   const tokenUrl = selectedProviderTokenUrl(provider);
   setSessionNotice(
     'Logged out. Your session API key was removed from the server. For safety, also remove/revoke this key at your provider.',
@@ -1832,10 +1866,10 @@ async function doGenerate() {
     return;
   }
 
-  // Check if user has API access
-  if (!state.hasToken && !state.serverFallbackAvailable) {
+  const accessCheck = await ensureAiAccessForInteraction();
+  if (!accessCheck.ok) {
     switchToTab('explain');
-    showExplainError('You need to set up an API key to generate code. Please add an API key in the AI setup panel.');
+    showExplainError(accessCheck.message);
     openTokenModal(1);
     return;
   }
